@@ -1,0 +1,50 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if the requesting user is a logged-in admin
+    function isAdmin() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    // Users collection: admins can read/write any user doc
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // All business collections: only admins can read and write
+    match /revenues/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /expenses/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /payments/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /employees/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /attendance/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /payroll/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /petty_cash/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /alerts/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /advances/{docId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
