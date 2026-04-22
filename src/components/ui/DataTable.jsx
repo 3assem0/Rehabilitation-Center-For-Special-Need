@@ -28,7 +28,7 @@ const DataTable = ({ columns, data, searchPlaceholder = "Search...", onSearch, o
           <thead>
             <tr className="bg-bg text-primary border-b border-border">
               {columns.map((col) => (
-                <th key={col.key} className="px-6 py-4 text-sm font-bold first:rounded-tr-lg last:rounded-tl-lg">
+                <th key={col.key} className="px-4 sm:px-6 py-4 text-sm font-bold whitespace-nowrap first:rounded-tr-lg last:rounded-tl-lg">
                   {col.header}
                 </th>
               ))}
@@ -43,7 +43,7 @@ const DataTable = ({ columns, data, searchPlaceholder = "Search...", onSearch, o
                   onClick={() => onRowClick && onRowClick(row)}
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className="px-6 py-4 text-sm text-text">
+                    <td key={col.key} className="px-4 sm:px-6 py-4 text-sm text-text whitespace-nowrap">
                       {col.render ? col.render(row[col.key], row) : row[col.key]}
                     </td>
                   ))}

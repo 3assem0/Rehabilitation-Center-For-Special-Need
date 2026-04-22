@@ -5,7 +5,7 @@ import { LogOut, Languages, User, Menu } from "lucide-react";
 
 const Navbar = ({ title }) => {
   const { logout, userData } = useAuth();
-  const { dispatch } = useApp();
+  const { state, dispatch } = useApp();
   const { language, t } = useTranslation();
 
   const toggleLanguage = () => {
@@ -13,15 +13,18 @@ const Navbar = ({ title }) => {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-border flex items-center justify-between px-8 sticky top-0 z-50 shadow-sm">
+    <header className="h-16 bg-white border-b border-border flex items-center justify-between px-4 sm:px-8 sticky top-0 z-50 shadow-sm">
       <div className="flex items-center gap-4">
         <button 
           onClick={() => dispatch({ actionType: "TOGGLE_SIDEBAR" })}
-          className="p-2 hover:bg-bg rounded-md lg:hidden"
+          className="p-2 hover:bg-bg rounded-md menu-btn"
         >
           <Menu size={20} />
         </button>
-        <h2 className="text-lg font-bold text-primary">{title}</h2>
+        {state.logo && (
+          <img src={state.logo} alt="Logo" className="h-8 w-auto object-contain block lg:hidden" />
+        )}
+        <h2 className="text-lg font-bold text-primary hidden sm:block">{title}</h2>
       </div>
 
       <div className="flex items-center gap-6">
@@ -35,12 +38,12 @@ const Navbar = ({ title }) => {
 
         <div className="h-8 w-[1px] bg-border"></div>
 
-        <div className="flex items-center gap-4">
-          <div className="text-right">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="hidden sm:block text-right">
             <p className="text-sm font-bold leading-none">{userData?.name || "مدير النظام"}</p>
             <p className="text-xs text-text-muted mt-1 uppercase">{userData?.role || "admin"}</p>
           </div>
-          <div className="w-10 h-10 rounded-full bg-primary-light text-white flex items-center justify-center font-bold">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-primary-light text-white flex items-center justify-center font-bold">
             {userData?.name?.charAt(0).toUpperCase() || "A"}
           </div>
           

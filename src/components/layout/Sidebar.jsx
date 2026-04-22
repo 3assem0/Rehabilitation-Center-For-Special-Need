@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { useTranslation } from "../../context/AppContext";
+import { useTranslation, useApp } from "../../context/AppContext";
 import { 
   Home, 
   Users, 
@@ -21,6 +21,7 @@ import {
  */
 const Sidebar = ({ className = "" }) => {
   const { t, language } = useTranslation();
+  const { state } = useApp();
 
   const menuItems = [
     { name: t("dashboard"), path: "/", icon: <Home size={20} /> },
@@ -37,11 +38,15 @@ const Sidebar = ({ className = "" }) => {
   ];
 
   return (
-    <aside className={`fixed top-0 bottom-0 w-[260px] bg-sidebar text-sidebar-text shadow-xl overflow-y-auto z-[60] ${className}`}>
-      <div className="p-6 text-center border-b border-white/10">
-        <h1 className="text-xl font-bold tracking-tight">
-          {language === "ar" ? "مركز التأهيل" : "Rehab Center"}
-        </h1>
+    <aside className={`sidebar shadow-xl overflow-y-auto z-[60] ${className}`}>
+      <div className="p-6 text-center border-b border-white/10 flex flex-col items-center justify-center min-h-[120px]">
+        {state.logo ? (
+          <img src={state.logo} alt="Center Logo" className="max-w-[140px] max-h-[80px] object-contain mb-2 drop-shadow-md" />
+        ) : (
+          <h1 className="text-xl font-bold tracking-tight">
+            {language === "ar" ? "مركز التأهيل" : "Rehab Center"}
+          </h1>
+        )}
         <p className="text-xs text-sidebar-text/50 mt-1 uppercase tracking-wider">Accounting System</p>
       </div>
 

@@ -6,7 +6,7 @@ import Modal from "../../components/ui/Modal";
 import Input from "../../components/ui/Input";
 import Badge from "../../components/ui/Badge";
 import { useFirestore } from "../../hooks/useFirestore";
-import { useTranslation } from "../../context/AppContext";
+import { useApp, useTranslation } from "../../context/AppContext";
 import { 
   UserCog, 
   ShieldCheck, 
@@ -14,13 +14,36 @@ import {
   HelpCircle, 
   Plus, 
   Trash2, 
-  Building2 
+  Building2,
+  ImagePlus,
+  X
 } from "lucide-react";
 import { toast, Toaster } from "react-hot-toast";
 
 const Settings = () => {
   const { t, language } = useTranslation();
+  const { state, dispatch } = useApp();
   const { data: users, addDocument, deleteDocument } = useFirestore("users");
+  
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        return toast.error("حجم الصورة يجب أن يكون أقل من 2 ميجابايت");
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        dispatch({ actionType: "SET_LOGO", payload: reader.result });
+        toast.success("تم تحديث الشعار بنجاح");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeLogo = () => {
+    dispatch({ actionType: "SET_LOGO", payload: null });
+    toast.success("تم إزالة الشعار");
+  };
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", email: "", role: "accountant" });
@@ -107,6 +130,42 @@ const Settings = () => {
                   <option value="EGP">جنيه مصري (EGP)</option>
                   <option value="USD">دولار أمريكي (USD)</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Logo Upload Section */}
+            <div className="mt-8 border-t border-border pt-6">
+              <label className="block text-sm font-semibold mb-4">شعار المركز (Logo)</label>
+              <div className="flex items-center gap-6">
+                <div className="relative group w-24 h-24 rounded-xl border-2 border-dashed border-border bg-bg/50 flex flex-col items-center justify-center overflow-hidden hover:border-primary/50 transition-colors cursor-pointer">
+                  {state.logo ? (
+                    <>
+                      <img src={state.logo} alt="Center Logo" className="w-full h-full object-contain p-2" />
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.preventDefault(); removeLogo(); }} className="text-white hover:bg-danger/20 hover:text-red-300">
+                          <X size={20} />
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center text-text-muted">
+                      <ImagePlus size={24} className="mx-auto mb-1 opacity-50" />
+                      <span className="text-[10px] uppercase font-bold">رفع صورة</span>
+                    </div>
+                  )}
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleLogoUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    disabled={!!state.logo}
+                  />
+                </div>
+                <div className="text-xs text-text-muted space-y-1">
+                  <p>• يُفضل رفع صورة بخلفية شفافة (PNG).</p>
+                  <p>• أقصى حجم للصورة: 2MB.</p>
+                  <p>• سيظهر هذا الشعار في القائمة الجانبية والتقارير.</p>
+                </div>
               </div>
             </div>
           </div>

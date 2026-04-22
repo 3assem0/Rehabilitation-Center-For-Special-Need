@@ -5,7 +5,8 @@ const AppContext = createContext();
 
 const initialState = {
   language: localStorage.getItem("lang") || "ar",
-  isSidebarOpen: true,
+  isSidebarOpen: window.innerWidth > 1024,
+  logo: localStorage.getItem("appLogo") || null,
 };
 
 function appReducer(state, action) {
@@ -15,6 +16,13 @@ function appReducer(state, action) {
       return { ...state, language: action.payload };
     case "TOGGLE_SIDEBAR":
       return { ...state, isSidebarOpen: !state.isSidebarOpen };
+    case "SET_LOGO":
+      if (action.payload) {
+        localStorage.setItem("appLogo", action.payload);
+      } else {
+        localStorage.removeItem("appLogo");
+      }
+      return { ...state, logo: action.payload };
     default:
       return state;
   }
@@ -27,6 +35,19 @@ export function AppProvider({ children }) {
     document.documentElement.dir = state.language === "ar" ? "rtl" : "ltr";
     document.documentElement.lang = state.language;
   }, [state.language]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 1024 && state.isSidebarOpen) {
+        dispatch({ actionType: "TOGGLE_SIDEBAR" });
+      } else if (window.innerWidth > 1024 && !state.isSidebarOpen) {
+        dispatch({ actionType: "TOGGLE_SIDEBAR" });
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [state.isSidebarOpen]);
 
   return (
     <AppContext.Provider value={{ state, dispatch }}>
