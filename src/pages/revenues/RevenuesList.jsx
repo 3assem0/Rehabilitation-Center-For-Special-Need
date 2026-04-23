@@ -261,7 +261,7 @@ const RevenuesList = () => {
             <div className="rounded-xl border border-border bg-bg/30 p-4">
               <p className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">ملاحظات</p>
               {selectedRevenue.notes ? (
-                <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">{selectedRevenue.notes}</p>
+                <p className="text-sm text-text leading-relaxed whitespace-pre-wrap break-all">{selectedRevenue.notes}</p>
               ) : (
                 <p className="text-sm text-text-muted italic">لا توجد ملاحظات</p>
               )}

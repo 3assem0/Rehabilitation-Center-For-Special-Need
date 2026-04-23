@@ -42,7 +42,18 @@ const Reports = () => {
             </p>
           </div>
           
-          <Button onClick={() => window.print()} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <Button 
+            onClick={() => {
+              setTimeout(() => {
+                try {
+                  window.print();
+                } catch (e) {
+                  alert(language === "ar" ? "الطباعة غير مدعومة في هذا المتصفح أو التطبيق." : "Printing not supported in this browser.");
+                }
+              }, 150);
+            }} 
+            style={{ display: "flex", alignItems: "center", gap: "6px" }}
+          >
             <Printer size={15} strokeWidth={1.75} />
             {language === "ar" ? "طباعة التقرير" : "Print Report"}
           </Button>
