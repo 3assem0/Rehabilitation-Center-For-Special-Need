@@ -1,44 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #1B4F72;
-  --color-primary-light: #2E86C1;
-  --color-accent: #F39C12;
-  --color-success: #27AE60;
-  --color-danger: #E74C3C;
-  --color-warning: #F1C40F;
-  --color-bg: #F4F6F9;
-  --color-card: #FFFFFF;
-  --color-text: #2C3E50;
-  --color-text-muted: #7F8C8D;
-  --color-border: #E8ECF0;
-  --color-sidebar: #1A2744;
-  --color-sidebar-text: #ECF0F1;
-  
-  --font-sans: 'Inter', 'Roboto', 'Outfit', sans-serif;
+  /* New design system tokens */
+  --color-primary:      #E85C3A;    /* Coral accent */
+  --color-primary-light:#F07A5E;    /* Lighter coral for hover */
+  --color-accent:       #5B4FCF;    /* Purple accent */
+  --color-success:      #22A86E;    /* Incoming green */
+  --color-danger:       #E85C3A;    /* Same coral for danger */
+  --color-warning:      #F59E0B;    /* Amber */
+  --color-bg:           #EAEAEF;    /* Page background */
+  --color-card:         #FFFFFF;    /* Card / content area */
+  --color-text:         #1a1a2e;    /* Headings & strong text */
+  --color-text-muted:   #6B6B80;    /* Body text */
+  --color-border:       #E0E0E8;    /* All borders */
+  --color-sidebar:      #FFFFFF;    /* Sidebar background */
+  --color-sidebar-text: #6B6B80;    /* Inactive nav items */
+
+  --font-sans: 'Inter', system-ui, sans-serif;
 }
 
 @layer base {
   body {
     @apply bg-bg text-text;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 400;
   }
 }
 
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-md font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply px-4 py-2 rounded-[10px] font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm;
   }
-  
+
   .btn-primary {
-    @apply bg-primary text-white hover:bg-primary-light;
+    background-color: #E85C3A;
+    color: #ffffff;
+  }
+  .btn-primary:hover {
+    background-color: #F07A5E;
   }
 
   .card {
-    @apply bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 transition-shadow hover:shadow-md;
+    background-color: #ffffff;
+    border-radius: 14px;
+    border: 0.5px solid #E0E0E8;
+    padding: 1.25rem 1.5rem;
+    /* No shadows, no transitions */
   }
 
   .input {
-    @apply w-full px-4 py-2 rounded-md border border-border focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all;
+    @apply w-full px-4 py-2 outline-none transition-all text-sm;
+    background-color: #F0F0F6;
+    border: none;
+    border-radius: 10px;
+    color: #1a1a2e;
+  }
+  .input:focus {
+    outline: none;
+    box-shadow: none;
   }
 }
 
@@ -50,14 +71,21 @@
 .sidebar {
   width: var(--sidebar-width);
   z-index: 60;
-  @apply transition-transform duration-300;
+  background-color: #ffffff;
+  transition: transform 0.3s ease;
 }
 
 [dir="rtl"] .sidebar {
-  @apply fixed right-0 top-0 h-screen bg-sidebar text-sidebar-text;
+  position: fixed;
+  right: 0;
+  top: 0;
+  height: 100vh;
 }
 [dir="ltr"] .sidebar {
-  @apply fixed left-0 top-0 h-screen bg-sidebar text-sidebar-text;
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
 }
 
 .main-content {
@@ -103,45 +131,171 @@
   }
 }
 
-/* Print Styles */
+
+/* Print Styles - Professional PDF Export */
 @media print {
+  @page {
+    margin: 15mm;
+    size: A4 portrait;
+  }
+
+  /* Force print background colors to maintain site theme */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide navigation and UI elements */
   .no-print, 
   header, 
   aside, 
-  .btn,
+  nav,
+  button,
   .toaster {
-    display: none;
+    display: none !important;
   }
 
-  html [dir="rtl"] .main-content {
-    margin: 0;
-    padding: 0;
-    width: 100%;
+  :root {
+    color-scheme: light !important;
   }
 
-  .card {
-    border: 1px solid #E8ECF0;
-    box-shadow: none;
-    break-inside: avoid;
+  /* Reset body and container backgrounds to pure white */
+  body, html, #root {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #1a1a2e !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
-  body {
-    background: white;
+  /* Override PageWrapper to span full page width */
+  .main-content {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    transform: none !important;
+    background: #ffffff !important;
+  }
+  
+  /* Remove PageWrapper's gray padding background so it looks clean */
+  .main-content > div {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    min-height: auto !important;
+  }
+
+  /* Expand scrollable tables so data isn't cut off */
+  div[style*="overflow-x: auto"],
+  div[style*="overflowX: auto"],
+  .overflow-x-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  /* Keep table rows together */
+  table {
+    width: 100% !important;
+    page-break-inside: auto !important;
+  }
+  
+  tr, .card, div[style*="border-radius: 14px"] {
+    page-break-inside: avoid !important;
   }
 
   .print-area {
-    display: block;
+    display: block !important;
+    width: 100% !important;
   }
 }
 
-/* Scrollbar styling for better UX */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E0E0E8; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #9090A8; }
+
+/* ═══════════════════════════════════════════════
+   GLOBAL DESIGN SYSTEM OVERRIDES
+   Applied to ALL pages automatically
+═══════════════════════════════════════════════ */
+
+
+/* Page subtitle paragraphs */
+.main-content > div > div > p,
+.main-content > div > div > div > p.text-text-muted {
+  font-size: 13px;
+  color: #9090A8;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+/* All select elements — match Input pill style */
+select.input,
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #F0F0F6 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239090A8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 12px center;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 9px 14px !important;
+  padding-left: 32px !important;
+  font-size: 13px !important;
+  color: #1a1a2e !important;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none !important;
+  width: 100%;
 }
-::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full hover:bg-text-muted;
+
+/* Textarea — match Input pill style */
+textarea.input,
+textarea {
+  background-color: #F0F0F6 !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 9px 14px !important;
+  font-size: 13px !important;
+  color: #1a1a2e !important;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  width: 100%;
+}
+
+/* Form labels inside pages */
+.main-content label.block {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: #9090A8 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px !important;
+}
+
+/* Card utility class — override old shadow/border */
+.card {
+  background-color: #ffffff !important;
+  border-radius: 14px !important;
+  border: 0.5px solid #E8E8EC !important;
+  box-shadow: none !important;
+  padding: 20px 24px !important;
+}
+
+/* Status/amount text color overrides */
+.text-success { color: #16A34A !important; }
+.text-danger   { color: #DC2626 !important; }
+.text-primary  { color: #1a1a2e !important; }
+.text-text-muted { color: #6B6B80 !important; }
+
+/* Checkbox accent color */
+input[type="checkbox"] {
+  accent-color: #2563EB;
+}
+
+/* Page action button area spacing */
+.main-content > div > div:first-child {
+  margin-bottom: 0;
 }

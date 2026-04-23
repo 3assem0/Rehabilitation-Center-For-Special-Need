@@ -1,30 +1,48 @@
 import React from "react";
-import { TrendingUp, TrendingDown, Clock, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 
 const KPICard = ({ title, value, icon, trend, trendValue, color = "primary" }) => {
-  const colors = {
-    primary: "text-primary bg-primary/10",
-    success: "text-success bg-success/10",
-    danger: "text-danger bg-danger/10",
-    warning: "text-warning bg-warning/10",
+  const iconColors = {
+    primary: { bg: "#FFF5F3", color: "#E85C3A" },
+    success: { bg: "#F0FDF6", color: "#22A86E" },
+    danger:  { bg: "#FFF5F3", color: "#E85C3A" },
+    warning: { bg: "#FFFBEB", color: "#F59E0B" },
   };
 
+  const ic = iconColors[color] || iconColors.primary;
+
   return (
-    <div className="card group hover:shadow-xl transition-all duration-300">
-      <div className="flex items-start justify-between">
+    <div style={{
+      backgroundColor: "#ffffff",
+      borderRadius: "14px",
+      border: "0.5px solid #E0E0E8",
+      padding: "1.25rem 1.5rem",
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div>
-          <p className="text-xs text-text-muted font-bold uppercase tracking-widest mb-1">{title}</p>
-          <h3 className="text-2xl font-black text-text">{value}</h3>
-          
+          <p style={{ fontSize: "11px", fontWeight: 500, color: "#9090A8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "6px" }}>
+            {title}
+          </p>
+          <h3 style={{ fontSize: "26px", fontWeight: 500, color: "#1a1a2e", lineHeight: 1.1 }}>
+            {value}
+          </h3>
+
           {trend && (
-            <div className={`flex items-center gap-1 mt-2 text-xs font-bold ${trend === 'up' ? 'text-success' : 'text-danger'}`}>
-              {trend === 'up' ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-              <span>{trendValue}</span>
-              <span className="text-text-muted font-normal ml-1">مقابل الشهر الماضي</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "8px", fontSize: "12px", color: trend === "up" ? "#22A86E" : "#E85C3A" }}>
+              {trend === "up" ? <ArrowUpRight size={13} strokeWidth={1.75} /> : <ArrowDownRight size={13} strokeWidth={1.75} />}
+              <span style={{ fontWeight: 500 }}>{trendValue}</span>
+              <span style={{ color: "#9090A8", fontWeight: 400, marginLeft: "2px" }}>مقابل الشهر الماضي</span>
             </div>
           )}
         </div>
-        <div className={`p-4 rounded-xl ${colors[color]} group-hover:scale-110 transition-transform`}>
+        <div style={{
+          padding: "10px",
+          borderRadius: "10px",
+          backgroundColor: ic.bg,
+          color: ic.color,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0,
+        }}>
           {icon}
         </div>
       </div>
@@ -33,3 +51,4 @@ const KPICard = ({ title, value, icon, trend, trendValue, color = "primary" }) =
 };
 
 export default KPICard;
+

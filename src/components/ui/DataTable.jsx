@@ -1,49 +1,95 @@
-import React from "react";
+import React, { useState } from "react";
 import { Search } from "lucide-react";
+import { useTranslation } from "../../context/AppContext";
 
 /**
  * @param {Array} columns [{ header: 'Name', key: 'name', render: (val, row) => <span>{val}</span> }]
  * @param {Array} data
  * @param {string} searchPlaceholder
  */
-const DataTable = ({ columns, data, searchPlaceholder = "Search...", onSearch, onRowClick }) => {
+const DataTable = ({ columns, data, searchPlaceholder, onSearch, onRowClick }) => {
+  const { t } = useTranslation();
+  const placeholder = searchPlaceholder || t("search") || "Search...";
+
   return (
-    <div className="card !p-0 overflow-hidden">
+    <div style={{
+      background: "#ffffff",
+      borderRadius: "14px",
+      border: "0.5px solid #E8E8EC",
+      overflow: "hidden",
+    }}>
       {/* Search Header */}
-      <div className="p-4 border-b border-border bg-bg/20 flex items-center justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
-          <input 
-            type="text" 
-            placeholder={searchPlaceholder}
-            className="input pl-10"
+      <div style={{
+        padding: "14px 20px",
+        borderBottom: "0.5px solid #E8E8EC",
+        background: "#FAFAFA",
+      }}>
+        <div style={{ position: "relative", maxWidth: "320px" }}>
+          <Search
+            size={15}
+            strokeWidth={1.75}
+            color="#9090A8"
+            style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)" }}
+          />
+          <input
+            type="text"
+            placeholder={placeholder}
             onChange={(e) => onSearch && onSearch(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 12px 8px 36px",
+              background: "#F0F0F6",
+              border: "none",
+              borderRadius: "20px",
+              fontSize: "13px",
+              color: "#1a1a2e",
+              outline: "none",
+            }}
           />
         </div>
       </div>
 
-      {/* Table Content */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-right border-collapse">
+      {/* Table */}
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "right" }}>
           <thead>
-            <tr className="bg-bg text-primary border-b border-border">
+            <tr style={{ background: "#FAFAFA", borderBottom: "0.5px solid #E8E8EC" }}>
               {columns.map((col) => (
-                <th key={col.key} className="px-4 sm:px-6 py-4 text-sm font-bold whitespace-nowrap first:rounded-tr-lg last:rounded-tl-lg">
+                <th key={col.key} style={{
+                  padding: "11px 20px",
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  color: "#9090A8",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.07em",
+                  whiteSpace: "nowrap",
+                }}>
                   {col.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody>
             {data.length > 0 ? (
               data.map((row, rowIndex) => (
-                <tr 
-                  key={row.id || rowIndex} 
-                  className={`hover:bg-bg/50 transition-colors group ${onRowClick ? 'cursor-pointer hover:bg-primary/5' : ''}`}
+                <tr
+                  key={row.id || rowIndex}
                   onClick={() => onRowClick && onRowClick(row)}
+                  style={{
+                    borderBottom: "0.5px solid #F0F0F4",
+                    cursor: onRowClick ? "pointer" : "default",
+                    transition: "background 0.1s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className="px-4 sm:px-6 py-4 text-sm text-text whitespace-nowrap">
+                    <td key={col.key} style={{
+                      padding: "13px 20px",
+                      fontSize: "13px",
+                      color: "#1a1a2e",
+                      whiteSpace: "nowrap",
+                    }}>
                       {col.render ? col.render(row[col.key], row) : row[col.key]}
                     </td>
                   ))}
@@ -51,10 +97,10 @@ const DataTable = ({ columns, data, searchPlaceholder = "Search...", onSearch, o
               ))
             ) : (
               <tr>
-                <td colSpan={columns.length} className="px-6 py-12 text-center text-text-muted">
-                  <div className="flex flex-col items-center gap-2">
-                    <span className="text-4xl text-border">📭</span>
-                    <p className="font-medium">لا توجد بيانات متاحة حالياً</p>
+                <td colSpan={columns.length} style={{ padding: "48px 24px", textAlign: "center" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "32px" }}>📭</span>
+                    <p style={{ fontSize: "14px", color: "#9090A8" }}>{t("noData") || "لا توجد بيانات متاحة حالياً"}</p>
                   </div>
                 </td>
               </tr>

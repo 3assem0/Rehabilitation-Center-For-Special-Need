@@ -11,7 +11,7 @@ const PageWrapper = ({ children, title }) => {
       {/* Mobile Overlay */}
       {state.isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/40 z-[55] desktop-hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-black/40 z-[55] desktop-hidden print:hidden backdrop-blur-sm transition-opacity"
           onClick={() => dispatch({ actionType: "TOGGLE_SIDEBAR" })}
         />
       )}
@@ -23,7 +23,11 @@ const PageWrapper = ({ children, title }) => {
         style={{ "--sidebar-offset": state.isSidebarOpen ? "260px" : "0px" }}
       >
         <Navbar title={title} />
-        <div className="p-4 sm:p-6 lg:p-8">
+        <div style={{
+          padding: "28px 32px",
+          background: "#F5F5F5",
+          minHeight: "calc(100vh - 60px)",
+        }}>
           {children}
         </div>
       </main>

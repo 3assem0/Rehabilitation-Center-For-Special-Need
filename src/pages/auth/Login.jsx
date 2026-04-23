@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useTranslation, useApp } from "../../context/AppContext";
 import { toast, Toaster } from "react-hot-toast";
-import { LogIn, Mail, Lock, Languages } from "lucide-react";
+import { LogIn, Mail, Lock, Languages, Layers } from "lucide-react";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -44,23 +44,30 @@ const Login = () => {
       {/* Floating Language Toggle */}
       <button 
         onClick={toggleLanguage}
-        className="absolute top-8 right-8 flex items-center gap-2 px-4 py-2 rounded-full bg-card shadow-sm hover:shadow-md transition-all text-sm font-medium border border-border"
+        style={{
+          position: "absolute", top: "24px", right: "24px",
+          display: "flex", alignItems: "center", gap: "6px",
+          padding: "8px 16px", borderRadius: "20px",
+          background: "#ffffff", border: "0.5px solid #E8E8EC",
+          fontSize: "13px", fontWeight: 500, color: "#6B6B80",
+          cursor: "pointer", transition: "all 0.2s"
+        }}
       >
         <Languages size={18} />
         <span>{language === "ar" ? "English" : "العربية"}</span>
       </button>
 
       <div className="w-full max-w-md">
-        <div className="card shadow-2xl border-t-4 border-yellow-500 animate-in fade-in zoom-in duration-500">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <LogIn className="text-primary" size={40} />
+        <div style={{ background: "#ffffff", borderRadius: "16px", border: "0.5px solid #E8E8EC", padding: "40px 32px" }} className="animate-in fade-in zoom-in duration-500">
+          <div className="text-center mb-10">
+            <div style={{ width: "64px", height: "64px", borderRadius: "16px", background: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+              <Layers size={32} strokeWidth={1.5} color="#ffffff" />
             </div>
-            <h1 className="text-2xl font-bold text-primary">{t("login")}</h1>
-            <p className="text-text-muted mt-2">
+            <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#1a1a2e", letterSpacing: "0.02em" }}>Sunrise</h1>
+            <p style={{ fontSize: "13px", color: "#9090A8", marginTop: "6px" }}>
               {language === "ar" 
-                ? "نظام الحسابات - مركز تأهيل الاحتياجات الخاصة" 
-                : "Accounting System - Special Needs Rehab Center"}
+                ? "نظام إدارة الحسابات - مركز التأهيل" 
+                : "Accounting Management System - Rehab Center"}
             </p>
           </div>
 

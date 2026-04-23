@@ -9,21 +9,37 @@ import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
 import { useAuth } from "../../context/AuthContext";
 import { toast, Toaster } from "react-hot-toast";
-import { MinusCircle, Filter, Receipt } from "lucide-react";
+import { MinusCircle, Edit2 } from "lucide-react";
 
 const ExpensesList = () => {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
-  const { data: expenses, loading, addDocument } = useFirestore("expenses");
+  const { data: expenses, loading, addDocument, updateDocument } = useFirestore("expenses");
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
+  const [editingId, setEditingId] = useState(null);
+  
+  const initialFormState = {
     category: "rent",
     amount: "",
     description: "",
     reference: "",
     date: new Date().toISOString().split('T')[0]
-  });
+  };
+  const [formData, setFormData] = useState(initialFormState);
+
+  const handleEditClick = (expense, e) => {
+    e.stopPropagation();
+    setFormData({
+      category: expense.category || "rent",
+      amount: expense.amount || "",
+      description: expense.description || "",
+      reference: expense.reference || "",
+      date: expense.date || new Date().toISOString().split('T')[0]
+    });
+    setEditingId(expense.id);
+    setIsModalOpen(true);
+  };
 
   const columns = [
     { header: t("category"), key: "category", render: (val) => t(val) },
@@ -35,6 +51,18 @@ const ExpensesList = () => {
     { header: t("description"), key: "description" },
     { header: t("reference"), key: "reference" },
     { header: t("date"), key: "date" },
+    {
+      header: "إجراءات",
+      key: "actions",
+      render: (_, row) => (
+        <button 
+          onClick={(e) => handleEditClick(row, e)}
+          className="p-2 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg"
+        >
+          <Edit2 size={16} />
+        </button>
+      )
+    }
   ];
 
   const handleInputChange = (e) => {
@@ -45,20 +73,32 @@ const ExpensesList = () => {
   const handleSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     try {
-      await addDocument({
+      const dataToSave = {
         ...formData,
         amount: Number(formData.amount),
         createdBy: currentUser.uid
-      });
-      toast.success(t("successfullyAdded"), { position: "top-center" });
+      };
+
+      if (editingId) {
+        await updateDocument(editingId, dataToSave);
+        toast.success("تم التعديل بنجاح", { position: "top-center" });
+      } else {
+        await addDocument(dataToSave);
+        toast.success(t("successfullyAdded"), { position: "top-center" });
+      }
+      
       setIsModalOpen(false);
-      setFormData({
-        category: "rent", amount: "", description: "", 
-        reference: "", date: new Date().toISOString().split('T')[0]
-      });
+      setEditingId(null);
+      setFormData(initialFormState);
     } catch (error) {
       toast.error(error.message);
     }
+  };
+
+  const openAddModal = () => {
+    setEditingId(null);
+    setFormData(initialFormState);
+    setIsModalOpen(true);
   };
 
   const totalThisMonth = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -77,7 +117,7 @@ const ExpensesList = () => {
             <span className="text-xs text-danger font-bold uppercase tracking-wider">إجمالي الشهر</span>
             <span className="text-xl font-bold text-danger">{totalThisMonth.toLocaleString()} ج.م</span>
           </div>
-          <Button onClick={() => setIsModalOpen(true)} className="gap-2" variant="danger">
+          <Button onClick={openAddModal} className="gap-2" variant="danger">
             <MinusCircle size={20} />
             إضافة مصروف
           </Button>
@@ -92,11 +132,11 @@ const ExpensesList = () => {
 
       <Modal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title="إضافة مصروف جديد"
+        onClose={() => { setIsModalOpen(false); setEditingId(null); }} 
+        title={editingId ? "تعديل مصروف" : "إضافة مصروف جديد"}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>{t("cancel")}</Button>
+            <Button variant="secondary" onClick={() => { setIsModalOpen(false); setEditingId(null); }}>{t("cancel")}</Button>
             <Button variant="danger" onClick={handleSubmit}>{t("save")}</Button>
           </>
         }

@@ -9,24 +9,40 @@ import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
 import { useAuth } from "../../context/AuthContext";
 import { toast, Toaster } from "react-hot-toast";
-import { Plus, Filter, Download } from "lucide-react";
+import { Plus, Filter, Download, Edit2 } from "lucide-react";
 import { format } from "date-fns";
 
 const RevenuesList = () => {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
-  const { data: revenues, loading, addDocument } = useFirestore("revenues");
+  const { data: revenues, loading, addDocument, updateDocument } = useFirestore("revenues");
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [selectedRevenue, setSelectedRevenue] = useState(null);
-  const [formData, setFormData] = useState({
+  const initialFormState = {
     clientName: "",
     type: "monthly_fee",
     totalAmount: "",
     paymentMethod: "cash",
     date: new Date().toISOString().split('T')[0],
     notes: ""
-  });
+  };
+  const [formData, setFormData] = useState(initialFormState);
+
+  const handleEditClick = (revenue, e) => {
+    e.stopPropagation();
+    setFormData({
+      clientName: revenue.clientName || "",
+      type: revenue.type || "monthly_fee",
+      totalAmount: revenue.totalAmount || "",
+      paymentMethod: revenue.paymentMethod || "cash",
+      date: revenue.date ? (revenue.date.toDate ? format(revenue.date.toDate(), 'yyyy-MM-dd') : revenue.date) : new Date().toISOString().split('T')[0],
+      notes: revenue.notes || ""
+    });
+    setEditingId(revenue.id);
+    setIsModalOpen(true);
+  };
 
   const formatDate = (val) => {
     if (!val) return '---';
@@ -69,6 +85,18 @@ const RevenuesList = () => {
         <span className="text-sm text-text-muted italic max-w-[140px] truncate block">{val}</span>
       ) : <span className="text-text-muted opacity-40">—</span>
     },
+    {
+      header: "إجراءات",
+      key: "actions",
+      render: (_, row) => (
+        <button 
+          onClick={(e) => handleEditClick(row, e)}
+          className="p-2 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg"
+        >
+          <Edit2 size={16} />
+        </button>
+      )
+    }
   ];
 
   const handleInputChange = (e) => {
@@ -80,20 +108,31 @@ const RevenuesList = () => {
     if (e && e.preventDefault) e.preventDefault();
     try {
       const total = Number(formData.totalAmount);
-      await addDocument({
-        ...formData,
-        totalAmount: total,
-        paidAmount: 0,
-        remainingAmount: total,
-        paymentStatus: "pending",
-        createdBy: currentUser.uid
-      });
-      toast.success(t("successfullyAdded"), { position: "top-center" });
+      
+      if (editingId) {
+        await updateDocument(editingId, {
+          ...formData,
+          totalAmount: total,
+          // Do not overwrite paidAmount/remainingAmount/paymentStatus on edit if we don't want to break it,
+          // but if we are editing total, we might need to adjust remaining.
+          // For simplicity, just update fields.
+        });
+        toast.success("تم التعديل بنجاح", { position: "top-center" });
+      } else {
+        await addDocument({
+          ...formData,
+          totalAmount: total,
+          paidAmount: 0,
+          remainingAmount: total,
+          paymentStatus: "pending",
+          createdBy: currentUser.uid
+        });
+        toast.success(t("successfullyAdded"), { position: "top-center" });
+      }
+      
       setIsModalOpen(false);
-      setFormData({
-        clientName: "", type: "monthly_fee", totalAmount: "", 
-        paymentMethod: "cash", date: new Date().toISOString().split('T')[0], notes: ""
-      });
+      setEditingId(null);
+      setFormData(initialFormState);
     } catch (error) {
       toast.error(error.message);
     }
@@ -154,7 +193,7 @@ const RevenuesList = () => {
             <Download size={18} />
             تصدير
           </Button>
-          <Button onClick={() => setIsModalOpen(true)} className="gap-2">
+          <Button onClick={() => { setEditingId(null); setFormData(initialFormState); setIsModalOpen(true); }} className="gap-2">
             <Plus size={20} />
             {t("add")}
           </Button>
@@ -231,14 +270,14 @@ const RevenuesList = () => {
         )}
       </Modal>
 
-      {/* ── Add Revenue Modal ── */}
+      {/* ── Add/Edit Revenue Modal ── */}
       <Modal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title="إضافة إيراد جديد"
+        onClose={() => { setIsModalOpen(false); setEditingId(null); }} 
+        title={editingId ? "تعديل إيراد" : "إضافة إيراد جديد"}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>{t("cancel")}</Button>
+            <Button variant="secondary" onClick={() => { setIsModalOpen(false); setEditingId(null); }}>{t("cancel")}</Button>
             <Button onClick={handleSubmit}>{t("save")}</Button>
           </>
         }

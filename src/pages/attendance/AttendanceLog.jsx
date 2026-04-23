@@ -7,32 +7,42 @@ import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
 import { calculateWorkHours } from "../../utils/calculations";
 import { toast, Toaster } from "react-hot-toast";
-import { 
-  format, 
-  startOfMonth, 
-  endOfMonth, 
-  eachDayOfInterval, 
-  isSameDay, 
-  addMonths, 
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isSameDay,
+  addMonths,
   subMonths,
-  isToday
+  isToday,
+  isWeekend,
 } from "date-fns";
 import { ar, enUS } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Clock, Save } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, Users, CheckCircle, XCircle, Clock, CalendarDays } from "lucide-react";
+
+// ── Design tokens ───────────────────────────────────────────────────
+const STATUS = {
+  present:  { bg: "#DCFCE7", color: "#16A34A", dot: "#16A34A", label: "P" },
+  absent:   { bg: "#FEE2E2", color: "#DC2626", dot: "#DC2626", label: "A" },
+  late:     { bg: "#FEF9C3", color: "#CA8A04", dot: "#CA8A04", label: "L" },
+  half_day: { bg: "#EEF2FF", color: "#4F46E5", dot: "#4F46E5", label: "H" },
+};
 
 const AttendanceLog = () => {
   const { t, language } = useTranslation();
   const { data: employees } = useFirestore("employees");
   const { data: attendance, addDocument, updateDocument } = useFirestore("attendance");
-  
+
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedCell, setSelectedCell] = useState(null); // { employeeId, date }
+  const [selectedCell, setSelectedCell] = useState(null);
+  const [selectedEmployeeForStats, setSelectedEmployeeForStats] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [cellData, setCellData] = useState({
     status: "present",
     checkIn: "09:00",
     checkOut: "17:00",
-    notes: ""
+    notes: "",
   });
 
   const locale = language === "ar" ? ar : enUS;
@@ -40,55 +50,60 @@ const AttendanceLog = () => {
   const monthEnd = endOfMonth(currentMonth);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-  // Map attendance data for quick lookup: { employeeId: { dateString: record } }
+  // ── Attendance map for fast lookup ──────────────────────────────
   const attendanceMap = useMemo(() => {
     const map = {};
-    attendance.forEach(record => {
-      const dateStr = format(record.date.toDate ? record.date.toDate() : new Date(record.date), 'yyyy-MM-dd');
+    attendance.forEach((record) => {
+      const dateStr = format(
+        record.date.toDate ? record.date.toDate() : new Date(record.date),
+        "yyyy-MM-dd"
+      );
       if (!map[record.employeeId]) map[record.employeeId] = {};
       map[record.employeeId][dateStr] = record;
     });
     return map;
   }, [attendance]);
 
+  // ── Monthly summary stats ────────────────────────────────────────
+  const summary = useMemo(() => {
+    let present = 0, absent = 0, late = 0, half = 0;
+    attendance.forEach((r) => {
+      const d = r.date.toDate ? r.date.toDate() : new Date(r.date);
+      if (
+        d >= monthStart && d <= monthEnd
+      ) {
+        if (selectedEmployeeForStats && r.employeeId !== selectedEmployeeForStats) return;
+        if (r.status === "present") present++;
+        else if (r.status === "absent") absent++;
+        else if (r.status === "late") late++;
+        else if (r.status === "half_day") half++;
+      }
+    });
+    return { present, absent, late, half };
+  }, [attendance, currentMonth, selectedEmployeeForStats, monthStart, monthEnd]);
+
   const handleCellClick = (employee, date) => {
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const dateStr = format(date, "yyyy-MM-dd");
     const existing = attendanceMap[employee.id]?.[dateStr];
-    
     setSelectedCell({ employee, date });
-    if (existing) {
-      setCellData({
-        status: existing.status,
-        checkIn: existing.checkIn || "09:00",
-        checkOut: existing.checkOut || "17:00",
-        notes: existing.notes || ""
-      });
-    } else {
-      setCellData({ status: "present", checkIn: "09:00", checkOut: "17:00", notes: "" });
-    }
+    setCellData(
+      existing
+        ? { status: existing.status, checkIn: existing.checkIn || "09:00", checkOut: existing.checkOut || "17:00", notes: existing.notes || "" }
+        : { status: "present", checkIn: "09:00", checkOut: "17:00", notes: "" }
+    );
     setIsModalOpen(true);
   };
 
   const handleSave = async () => {
     if (!selectedCell) return;
     const { employee, date } = selectedCell;
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const dateStr = format(date, "yyyy-MM-dd");
     const existing = attendanceMap[employee.id]?.[dateStr];
-
     const hoursData = calculateWorkHours(cellData.checkIn, cellData.checkOut, 8);
-    const finalData = {
-      employeeId: employee.id,
-      date: date,
-      ...cellData,
-      ...hoursData
-    };
-
+    const finalData = { employeeId: employee.id, date, ...cellData, ...hoursData };
     try {
-      if (existing) {
-        await updateDocument(existing.id, finalData);
-      } else {
-        await addDocument(finalData);
-      }
+      if (existing) await updateDocument(existing.id, finalData);
+      else await addDocument(finalData);
       toast.success(t("successfullyUpdated"));
       setIsModalOpen(false);
     } catch (error) {
@@ -96,73 +111,246 @@ const AttendanceLog = () => {
     }
   };
 
-  const getStatusBadge = (status) => {
-    const styles = {
-      present: 'bg-green-100 text-green-700',
-      absent: 'bg-red-100 text-red-700',
-      late: 'bg-yellow-100 text-yellow-700',
-      half_day: 'bg-blue-100 text-blue-700'
-    };
+  // ── Status pill cell ─────────────────────────────────────────────
+  const StatusCell = ({ record }) => {
+    if (!record) return (
+      <div style={{ width: "28px", height: "28px", borderRadius: "6px", background: "#F5F5F8", margin: "0 auto" }} />
+    );
+    const s = STATUS[record.status] || STATUS.present;
     return (
-      <span className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${styles[status]}`}>
-        {status.charAt(0).toUpperCase()}
-      </span>
+      <div style={{
+        width: "28px", height: "28px", borderRadius: "6px",
+        background: s.bg, color: s.color,
+        fontSize: "10px", fontWeight: 700,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        margin: "0 auto",
+        letterSpacing: "0.02em",
+      }}>
+        {s.label}
+      </div>
     );
   };
+
+  // ── Status selector button ───────────────────────────────────────
+  const StatusOption = ({ status }) => {
+    const s = STATUS[status];
+    const active = cellData.status === status;
+    return (
+      <button
+        onClick={() => setCellData({ ...cellData, status })}
+        style={{
+          padding: "10px 14px",
+          borderRadius: "10px",
+          border: active ? `1.5px solid ${s.color}` : "0.5px solid #E8E8EC",
+          background: active ? s.bg : "#ffffff",
+          color: active ? s.color : "#6B6B80",
+          fontSize: "13px",
+          fontWeight: active ? 600 : 400,
+          cursor: "pointer",
+          transition: "all 0.15s",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+        }}
+      >
+        <span style={{
+          width: "8px", height: "8px", borderRadius: "50%",
+          background: active ? s.dot : "#D0D0D8",
+          flexShrink: 0,
+        }} />
+        {t(status)}
+      </button>
+    );
+  };
+
+  const activeEmployees = employees.filter(e => e.isActive !== false);
 
   return (
     <PageWrapper title={t("attendance")}>
       <Toaster position="top-center" />
-      
-      {/* Month Selector */}
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold text-primary">{t("attendance")}</h1>
-        <div className="flex items-center gap-4 bg-white p-2 rounded-lg border border-border shadow-sm">
-          <Button variant="ghost" size="sm" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
-            <ChevronRight size={20} className={language === 'ar' ? '' : 'rotate-180'} />
-          </Button>
-          <span className="font-bold text-primary min-w-[140px] text-center">
-            {format(currentMonth, 'MMMM yyyy', { locale })}
+
+      {/* ── Page header ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+        <div>
+          <h1 style={{ fontSize: "22px", fontWeight: 500, color: "#1a1a2e" }}>{t("attendance")}</h1>
+          <p style={{ fontSize: "13px", color: "#9090A8", marginTop: "3px" }}>
+            {language === "ar" ? "دفتر حضور الموظفين الشهري" : "Monthly employee attendance register"}
+          </p>
+        </div>
+
+        {/* Month navigator */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "4px",
+          background: "#ffffff", borderRadius: "20px",
+          border: "0.5px solid #E8E8EC", padding: "4px",
+        }}>
+          <button
+            onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+            style={{ width: "32px", height: "32px", borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer", color: "#6B6B80", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <ChevronRight size={16} strokeWidth={2} />
+          </button>
+          <span style={{ minWidth: "150px", textAlign: "center", fontSize: "14px", fontWeight: 500, color: "#1a1a2e" }}>
+            {format(currentMonth, "MMMM yyyy", { locale })}
           </span>
-          <Button variant="ghost" size="sm" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}>
-            <ChevronLeft size={20} className={language === 'ar' ? '' : 'rotate-180'} />
-          </Button>
+          <button
+            onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+            style={{ width: "32px", height: "32px", borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer", color: "#6B6B80", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <ChevronLeft size={16} strokeWidth={2} />
+          </button>
         </div>
       </div>
 
-      {/* Attendance Grid */}
-      <div className="card !p-0 overflow-hidden">
-        <div className="overflow-x-auto max-h-[70vh]">
-          <table className="w-full border-collapse text-right">
-            <thead className="sticky top-0 z-20 bg-bg text-primary">
+      {/* ── Summary stat strip ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
+        {[
+          { label: language === "ar" ? "حاضر" : "Present",  value: summary.present, bg: "#DCFCE7", color: "#16A34A", icon: <CheckCircle size={16} strokeWidth={1.75} /> },
+          { label: language === "ar" ? "غائب" : "Absent",   value: summary.absent,  bg: "#FEE2E2", color: "#DC2626", icon: <XCircle size={16} strokeWidth={1.75} /> },
+          { label: language === "ar" ? "متأخر" : "Late",    value: summary.late,    bg: "#FEF9C3", color: "#CA8A04", icon: <Clock size={16} strokeWidth={1.75} /> },
+          { label: language === "ar" ? "نصف يوم" : "Half",  value: summary.half,    bg: "#EEF2FF", color: "#4F46E5", icon: <CalendarDays size={16} strokeWidth={1.75} /> },
+        ].map((s) => (
+          <div key={s.label} style={{
+            background: "#ffffff", borderRadius: "14px", border: "0.5px solid #E8E8EC",
+            padding: "16px 20px", display: "flex", alignItems: "center", gap: "14px",
+          }}>
+            <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: s.bg, color: s.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {s.icon}
+            </div>
+            <div>
+              <p style={{ fontSize: "11px", color: "#9090A8", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</p>
+              <p style={{ fontSize: "22px", fontWeight: 500, color: "#1a1a2e", lineHeight: 1.1, marginTop: "2px" }}>{s.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Legend ── */}
+      <div style={{ display: "flex", gap: "16px", marginBottom: "12px", flexWrap: "wrap" }}>
+        {Object.entries(STATUS).map(([key, s]) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ width: "18px", height: "18px", borderRadius: "4px", background: s.bg, color: s.color, fontSize: "9px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.label}</div>
+            <span style={{ fontSize: "12px", color: "#6B6B80" }}>{t(key)}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ width: "18px", height: "18px", borderRadius: "4px", background: "#F5F5F8" }} />
+          <span style={{ fontSize: "12px", color: "#6B6B80" }}>{language === "ar" ? "لم يسجَّل" : "Not recorded"}</span>
+        </div>
+      </div>
+
+      {/* ── Attendance grid ── */}
+      <div style={{ background: "#ffffff", borderRadius: "14px", border: "0.5px solid #E8E8EC", overflow: "hidden" }}>
+        <div style={{ overflowX: "auto", maxHeight: "65vh", overflowY: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "right", minWidth: "800px" }}>
+            {/* Header */}
+            <thead style={{ position: "sticky", top: 0, zIndex: 20, background: "#FAFAFA" }}>
               <tr>
-                <th className="px-4 py-3 border border-border sticky right-0 bg-bg z-30 min-w-[180px]">{t("employee")}</th>
-                {daysInMonth.map(day => (
-                  <th key={day.toString()} className={`px-2 py-3 border border-border text-center min-w-[45px] ${isToday(day) ? 'bg-primary/10' : ''}`}>
-                    <div className="text-[10px] opacity-60 font-medium">{format(day, 'EEE', { locale })}</div>
-                    <div className="text-xs font-bold">{format(day, 'd')}</div>
-                  </th>
-                ))}
+                {/* Sticky employee name col */}
+                <th style={{
+                  padding: "12px 16px", position: "sticky", right: 0, zIndex: 30,
+                  background: "#FAFAFA", borderBottom: "0.5px solid #E8E8EC", borderRight: "0.5px solid #E8E8EC",
+                  fontSize: "11px", fontWeight: 500, color: "#9090A8", textTransform: "uppercase", letterSpacing: "0.06em",
+                  minWidth: "180px", whiteSpace: "nowrap",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Users size={13} strokeWidth={1.75} />
+                    {t("employee")}
+                  </div>
+                </th>
+                {daysInMonth.map((day) => {
+                  const weekend = day.getDay() === 5 || day.getDay() === 6; // Fri/Sat
+                  const today = isToday(day);
+                  return (
+                    <th key={day.toString()} style={{
+                      padding: "8px 4px", minWidth: "38px", maxWidth: "38px",
+                      borderBottom: "0.5px solid #E8E8EC", borderRight: "0.5px solid #F0F0F4",
+                      textAlign: "center",
+                      background: today ? "#EEF2FF" : weekend ? "#FAFAFA" : "#FAFAFA",
+                    }}>
+                      <div style={{ fontSize: "9px", color: today ? "#4F46E5" : "#9090A8", fontWeight: 500 }}>
+                        {format(day, "EEE", { locale }).slice(0, 2)}
+                      </div>
+                      <div style={{
+                        fontSize: "12px", fontWeight: today ? 700 : 500,
+                        color: today ? "#4F46E5" : weekend ? "#D0D0D8" : "#1a1a2e",
+                        marginTop: "2px",
+                      }}>
+                        {format(day, "d")}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
+
+            {/* Body */}
             <tbody>
-              {employees.map(emp => (
-                <tr key={emp.id} className="hover:bg-bg/40 transition-colors">
-                  <td className="px-4 py-3 border border-border sticky right-0 bg-card z-10 font-bold text-sm">
-                    {language === 'ar' ? emp.nameAr : emp.name}
+              {activeEmployees.length === 0 && (
+                <tr>
+                  <td colSpan={daysInMonth.length + 1} style={{ padding: "48px", textAlign: "center", color: "#9090A8", fontSize: "14px" }}>
+                    {language === "ar" ? "لا يوجد موظفون نشطون" : "No active employees"}
                   </td>
-                  {daysInMonth.map(day => {
-                    const dateStr = format(day, 'yyyy-MM-dd');
+                </tr>
+              )}
+              {activeEmployees.map((emp, rowIdx) => (
+                <tr
+                  key={emp.id}
+                  style={{ background: rowIdx % 2 === 0 ? "#ffffff" : "#FDFDFE" }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#F9F9FB"}
+                  onMouseLeave={e => e.currentTarget.style.background = rowIdx % 2 === 0 ? "#ffffff" : "#FDFDFE"}
+                >
+                  {/* Sticky name cell */}
+                  <td 
+                    onClick={() => setSelectedEmployeeForStats(prev => prev === emp.id ? null : emp.id)}
+                    style={{
+                    padding: "10px 16px", position: "sticky", right: 0, zIndex: 10,
+                    borderRight: "0.5px solid #E8E8EC", borderBottom: "0.5px solid #F0F0F4",
+                    background: selectedEmployeeForStats === emp.id ? "#F0F0F6" : "inherit", whiteSpace: "nowrap",
+                    cursor: "pointer",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{
+                        width: "30px", height: "30px", borderRadius: "50%",
+                        background: ["#DCFCE7","#EEF2FF","#FEF9C3","#FEE2E2"][rowIdx % 4],
+                        color: ["#16A34A","#4F46E5","#CA8A04","#DC2626"][rowIdx % 4],
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "12px", fontWeight: 600, flexShrink: 0,
+                      }}>
+                        {(language === "ar" ? emp.nameAr : emp.name)?.charAt(0)?.toUpperCase() || "?"}
+                      </div>
+                      <div>
+                        <p style={{ fontSize: "13px", fontWeight: 500, color: "#1a1a2e", lineHeight: 1.1 }}>
+                          {language === "ar" ? emp.nameAr : emp.name}
+                        </p>
+                        {emp.jobTitle && (
+                          <p style={{ fontSize: "11px", color: "#9090A8", marginTop: "1px" }}>{emp.jobTitle}</p>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Day cells */}
+                  {daysInMonth.map((day) => {
+                    const dateStr = format(day, "yyyy-MM-dd");
                     const record = attendanceMap[emp.id]?.[dateStr];
+                    const weekend = day.getDay() === 5 || day.getDay() === 6;
+                    const today = isToday(day);
                     return (
-                      <td 
-                        key={`${emp.id}-${dateStr}`} 
-                        className="p-1 border border-border text-center cursor-pointer hover:bg-primary/5 transition-colors"
+                      <td
+                        key={`${emp.id}-${dateStr}`}
                         onClick={() => handleCellClick(emp, day)}
+                        style={{
+                          padding: "5px 4px",
+                          borderRight: "0.5px solid #F0F0F4",
+                          borderBottom: "0.5px solid #F0F0F4",
+                          textAlign: "center",
+                          cursor: "pointer",
+                          background: today ? "#F5F5FF" : weekend ? "#FAFAFA" : "transparent",
+                          transition: "background 0.1s",
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = "#EEF2FF"}
+                        onMouseLeave={e => e.currentTarget.style.background = today ? "#F5F5FF" : weekend ? "#FAFAFA" : "transparent"}
                       >
-                        <div className="flex justify-center">
-                          {record ? getStatusBadge(record.status) : <span className="w-1 h-1 bg-border rounded-full"></span>}
-                        </div>
+                        <StatusCell record={record} />
                       </td>
                     );
                   })}
@@ -173,75 +361,88 @@ const AttendanceLog = () => {
         </div>
       </div>
 
+      {/* ── Attendance modal ── */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={selectedCell ? `${t("markAttendance")}: ${language === 'ar' ? selectedCell.employee.nameAr : selectedCell.employee.name}` : ''}
+        title={
+          selectedCell
+            ? `${language === "ar" ? selectedCell.employee.nameAr : selectedCell.employee.name} — ${format(selectedCell.date, "d MMMM yyyy", { locale })}`
+            : ""
+        }
         footer={
           <>
             <Button variant="secondary" onClick={() => setIsModalOpen(false)}>{t("cancel")}</Button>
-            <Button onClick={handleSave} className="gap-2">
-              <Save size={18} />
+            <Button onClick={handleSave} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <Save size={15} strokeWidth={1.75} />
               {t("save")}
             </Button>
           </>
         }
       >
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4 text-center">
-            <div className="p-4 bg-bg rounded-lg border border-border">
-              <p className="text-xs text-text-muted mb-1">{t("todayDate")}</p>
-              <p className="font-bold">{selectedCell ? format(selectedCell.date, 'dd/MM/yyyy') : ''}</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          {/* Date info strip */}
+          {selectedCell && (
+            <div style={{
+              display: "flex", gap: "10px",
+            }}>
+              <div style={{ flex: 1, background: "#F9F9FB", borderRadius: "10px", border: "0.5px solid #E8E8EC", padding: "12px 16px", textAlign: "center" }}>
+                <p style={{ fontSize: "11px", color: "#9090A8", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>{t("todayDate")}</p>
+                <p style={{ fontSize: "14px", fontWeight: 500, color: "#1a1a2e" }}>{format(selectedCell.date, "dd/MM/yyyy")}</p>
+              </div>
+              <div style={{ flex: 1, background: "#F9F9FB", borderRadius: "10px", border: "0.5px solid #E8E8EC", padding: "12px 16px", textAlign: "center" }}>
+                <p style={{ fontSize: "11px", color: "#9090A8", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>{t("dayOfWeek")}</p>
+                <p style={{ fontSize: "14px", fontWeight: 500, color: "#1a1a2e" }}>{format(selectedCell.date, "EEEE", { locale })}</p>
+              </div>
             </div>
-            <div className="p-4 bg-bg rounded-lg border border-border">
-              <p className="text-xs text-text-muted mb-1">{t("dayOfWeek")}</p>
-              <p className="font-bold">{selectedCell ? format(selectedCell.date, 'EEEE', { locale }) : ''}</p>
-            </div>
-          </div>
+          )}
 
+          {/* Status selector */}
           <div>
-            <label className="block text-sm font-semibold mb-3">{t("attendanceStatus")}</label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {['present', 'absent', 'late', 'half_day'].map(status => (
-                <button
-                  key={status}
-                  className={`px-4 py-2 rounded-lg border text-sm font-bold transition-all ${
-                    cellData.status === status 
-                    ? 'bg-primary text-white border-primary shadow-lg ring-2 ring-primary/20' 
-                    : 'bg-white border-border text-text hover:border-primary'
-                  }`}
-                  onClick={() => setCellData({ ...cellData, status })}
-                >
-                  {t(status)}
-                </button>
+            <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#9090A8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "10px" }}>
+              {t("attendanceStatus")}
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              {["present", "absent", "late", "half_day"].map((status) => (
+                <StatusOption key={status} status={status} />
               ))}
             </div>
           </div>
 
-          {(cellData.status === 'present' || cellData.status === 'late' || cellData.status === 'half_day') && (
-            <div className="grid grid-cols-2 gap-6 animate-in slide-in-from-top-2">
-              <Input 
-                label={t("checkInTime")} 
-                type="time" 
-                value={cellData.checkIn} 
-                onChange={(e) => setCellData({ ...cellData, checkIn: e.target.value })} 
+          {/* Time inputs — only for relevant statuses */}
+          {["present", "late", "half_day"].includes(cellData.status) && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+              <Input
+                label={t("checkInTime")}
+                type="time"
+                value={cellData.checkIn}
+                onChange={(e) => setCellData({ ...cellData, checkIn: e.target.value })}
               />
-              <Input 
-                label={t("checkOutTime")} 
-                type="time" 
-                value={cellData.checkOut} 
-                onChange={(e) => setCellData({ ...cellData, checkOut: e.target.value })} 
+              <Input
+                label={t("checkOutTime")}
+                type="time"
+                value={cellData.checkOut}
+                onChange={(e) => setCellData({ ...cellData, checkOut: e.target.value })}
               />
             </div>
           )}
 
-          <div className="w-full">
-            <label className="block text-sm font-semibold mb-2">{t("notes")}</label>
-            <textarea 
-              className="input min-h-[80px]" 
+          {/* Notes */}
+          <div>
+            <label style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#9090A8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>
+              {t("notes")}
+            </label>
+            <textarea
               value={cellData.notes}
               onChange={(e) => setCellData({ ...cellData, notes: e.target.value })}
-            ></textarea>
+              rows={2}
+              placeholder={language === "ar" ? "ملاحظة اختيارية..." : "Optional note..."}
+              style={{
+                width: "100%", background: "#F0F0F6", border: "none", borderRadius: "10px",
+                padding: "10px 14px", fontSize: "13px", color: "#1a1a2e", fontFamily: "inherit",
+                outline: "none", resize: "vertical", boxSizing: "border-box",
+              }}
+            />
           </div>
         </div>
       </Modal>

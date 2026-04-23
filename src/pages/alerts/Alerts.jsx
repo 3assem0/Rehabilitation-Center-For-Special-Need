@@ -88,7 +88,7 @@ const Alerts = () => {
     <PageWrapper title={t("alerts")}>
       <div className="mb-10">
         <h1 className="text-2xl font-bold text-primary">{t("alerts")}</h1>
-        <p className="text-text-muted mt-1">تنبيهات النظام الذكية للمتابعة المالية والإدارية</p>
+        <p className="text-text-muted m-2">تنبيهات النظام الذكية للمتابعة المالية والإدارية</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4">

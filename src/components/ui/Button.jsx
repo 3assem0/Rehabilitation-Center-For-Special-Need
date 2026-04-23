@@ -1,42 +1,56 @@
 import React from "react";
 
-const Button = ({ 
-  children, 
-  variant = 'primary', 
-  size = 'md', 
-  className = '', 
-  loading = false, 
-  ...props 
+const Button = ({
+  children,
+  variant = "primary",
+  size = "md",
+  className = "",
+  loading = false,
+  ...props
 }) => {
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "6px",
+    fontFamily: "inherit",
+    fontWeight: 500,
+    cursor: loading ? "not-allowed" : "pointer",
+    opacity: loading ? 0.65 : 1,
+    border: "none",
+    transition: "background 0.15s, opacity 0.15s",
+  };
+
   const variants = {
-    primary: 'bg-primary text-white hover:bg-primary-light shadow-md',
-    secondary: 'bg-white text-primary border border-border hover:bg-bg',
-    danger: 'bg-danger text-white hover:bg-red-600 shadow-md',
-    success: 'bg-success text-white hover:bg-green-600 shadow-md',
-    warning: 'bg-warning text-white hover:bg-yellow-600 shadow-md',
-    ghost: 'bg-transparent text-text hover:bg-bg border-none'
+    primary:   { background: "#1a1a2e", color: "#ffffff", borderRadius: "20px" },
+    secondary: { background: "transparent", color: "#1a1a2e", border: "0.5px solid #E8E8EC", borderRadius: "20px" },
+    danger:    { background: "#FEE2E2", color: "#DC2626", borderRadius: "20px" },
+    success:   { background: "#DCFCE7", color: "#16A34A", borderRadius: "20px" },
+    warning:   { background: "#FEF9C3", color: "#CA8A04", borderRadius: "20px" },
+    ghost:     { background: "transparent", color: "#6B6B80", borderRadius: "8px" },
   };
 
   const sizes = {
-    sm: 'px-3 py-1.5 text-xs',
-    md: 'px-4 py-2 text-sm',
-    lg: 'px-6 py-3 text-base'
+    sm: { padding: "5px 14px", fontSize: "12px" },
+    md: { padding: "8px 18px", fontSize: "13px" },
+    lg: { padding: "10px 24px", fontSize: "14px" },
   };
 
   return (
     <button
-      className={`
-        btn inline-flex items-center justify-center gap-2 font-semibold
-        ${variants[variant]}
-        ${sizes[size]}
-        ${loading ? 'opacity-70 cursor-not-allowed' : ''}
-        ${className}
-      `}
+      style={{ ...base, ...variants[variant], ...sizes[size] }}
       disabled={loading}
+      className={className}
       {...props}
     >
       {loading && (
-        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+        <div style={{
+          width: "13px", height: "13px",
+          border: "2px solid currentColor",
+          borderTopColor: "transparent",
+          borderRadius: "50%",
+          animation: "spin 0.6s linear infinite",
+        }} />
       )}
       {children}
     </button>
