@@ -183,12 +183,12 @@ const RevenuesList = () => {
     <PageWrapper title={t("revenues")}>
       <Toaster position="top-center" />
       
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary">{t("revenues")}</h1>
           <p className="text-text-muted mt-1">متابعة الإيرادات وتدفقات السيولة</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <Button variant="secondary" className="gap-2" onClick={handleExport}>
             <Download size={18} />
             تصدير
@@ -224,7 +224,7 @@ const RevenuesList = () => {
             </div>
 
             {/* Amount summary cards */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="rounded-xl bg-primary/5 border border-primary/10 p-4 text-center">
                 <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">الإجمالي</p>
                 <p className="text-xl font-black text-primary">{selectedRevenue.totalAmount?.toLocaleString()}</p>
@@ -291,7 +291,7 @@ const RevenuesList = () => {
             required 
           />
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="w-full">
               <label className="block text-sm font-semibold mb-2 text-text">{t("revenueType")}</label>
               <select 
@@ -320,7 +320,7 @@ const RevenuesList = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="w-full">
               <label className="block text-sm font-semibold mb-2 text-text">{t("paymentMethod")}</label>
               <select 

@@ -10,7 +10,7 @@
   --color-success:      #22A86E;    /* Incoming green */
   --color-danger:       #E85C3A;    /* Same coral for danger */
   --color-warning:      #F59E0B;    /* Amber */
-  --color-bg:           #EAEAEF;    /* Page background */
+  --color-bg:           #F5F5F5;    /* Page background */
   --color-card:         #FFFFFF;    /* Card / content area */
   --color-text:         #1a1a2e;    /* Headings & strong text */
   --color-text-muted:   #6B6B80;    /* Body text */
@@ -77,27 +77,28 @@
 
 [dir="rtl"] .sidebar {
   position: fixed;
-  right: 0;
-  top: 0;
-  height: 100vh;
+  right: 16px;
+  top: 2.5vh;
+  height: 95vh;
 }
 [dir="ltr"] .sidebar {
   position: fixed;
-  left: 0;
-  top: 0;
-  height: 100vh;
+  left: 16px;
+  top: 2.5vh;
+  height: 95vh;
 }
 
 .main-content {
   @apply min-h-screen transition-all duration-300;
+  overflow-x: hidden;
 }
 
 [dir="rtl"] .main-content {
-  margin-right: var(--sidebar-offset, var(--sidebar-width));
+  margin-right: calc(var(--sidebar-offset, var(--sidebar-width)) + 16px);
   margin-left: 0;
 }
 [dir="ltr"] .main-content {
-  margin-left: var(--sidebar-offset, var(--sidebar-width));
+  margin-left: calc(var(--sidebar-offset, var(--sidebar-width)) + 16px);
   margin-right: 0;
 }
 
@@ -111,23 +112,32 @@
 @media (max-width: 1024px) {
   :root {
     --sidebar-offset: 0px !important;
-    --sidebar-width: 175px;
+    --sidebar-width: 260px;
   }
   
   .main-content {
     margin-right: 0 !important;
     margin-left: 0 !important;
+    padding: 0;
   }
-  
+
+  /* Force sidebar fully off-screen, accounting for the 16px card gap */
   [dir="rtl"] .sidebar {
-    transform: translateX(100%);
+    transform: translateX(calc(100% + 20px)) !important;
   }
   [dir="ltr"] .sidebar {
-    transform: translateX(-100%);
+    transform: translateX(calc(-100% - 20px)) !important;
   }
   
   .sidebar.open {
     transform: translateX(0) !important;
+  }
+
+  /* Responsive page padding on mobile */
+  .main-content > main > div,
+  .main-content > div > div {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
   }
 }
 

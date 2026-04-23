@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import PageWrapper from "../../components/layout/PageWrapper";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
+import { useNavigate } from "react-router-dom";
 import {
   TrendingUp,
   TrendingDown,
@@ -14,8 +15,11 @@ import {
   Clock,
   ChevronDown,
   ArrowRight,
+  Activity,
 } from "lucide-react";
 import {
+  AreaChart,
+  Area,
   BarChart,
   Bar,
   LineChart,
@@ -75,6 +79,7 @@ const SectionTitle = ({ children }) => (
 const Dashboard = () => {
   const { t, language } = useTranslation();
   const locale = language === "ar" ? ar : enUS;
+  const navigate = useNavigate();
 
   // ── Real data hooks (unchanged) ──────────────────────────────────
   const { data: revenues } = useFirestore("revenues");
@@ -85,6 +90,7 @@ const Dashboard = () => {
   const stats = useMemo(() => {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const lastMonth = subMonths(now, 1);
 
     const currentRevenues = revenues.filter(r => {
       if (!r.date) return false;
@@ -95,8 +101,21 @@ const Dashboard = () => {
       return isSameMonth(new Date(e.date.toDate ? e.date.toDate() : e.date), now);
     });
 
+    const lastMonthRevenues = revenues.filter(r => {
+      if (!r.date) return false;
+      return isSameMonth(new Date(r.date.toDate ? r.date.toDate() : r.date), lastMonth);
+    });
+    const lastMonthExpenses = expenses.filter(e => {
+      if (!e.date) return false;
+      return isSameMonth(new Date(e.date.toDate ? e.date.toDate() : e.date), lastMonth);
+    });
+
     const totalRev = currentRevenues.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
     const totalExp = currentExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    
+    const lastTotalRev = lastMonthRevenues.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
+    const lastTotalExp = lastMonthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
     const pendingTotal = revenues.reduce((sum, r) => sum + (r.remainingAmount || 0), 0);
 
     const overdueCount = revenues.filter(r => {
@@ -105,8 +124,28 @@ const Dashboard = () => {
       return new Date(r.date.toDate ? r.date.toDate() : r.date) < thirtyDaysAgo;
     }).length;
 
-    return { totalRevenues: totalRev, totalExpenses: totalExp, netProfit: totalRev - totalExp, pendingPayments: pendingTotal, overdueCount };
-  }, [revenues, expenses]);
+    const revDiff = totalRev - lastTotalRev;
+    const revUp = revDiff >= 0;
+    const revTrendText = lastTotalRev === 0 ? "" : `${Math.abs(Math.round((revDiff / lastTotalRev) * 100))}% ${revUp ? (language === "ar" ? 'زيادة' : 'up') : (language === "ar" ? 'نقص' : 'down')}`;
+
+    const expDiff = totalExp - lastTotalExp;
+    const expUp = expDiff >= 0;
+    const expTrendText = lastTotalExp === 0 ? "" : `${Math.abs(Math.round((expDiff / lastTotalExp) * 100))}% ${expUp ? (language === "ar" ? 'زيادة' : 'up') : (language === "ar" ? 'نقص' : 'down')}`;
+
+    return { 
+      totalRevenues: totalRev, 
+      totalExpenses: totalExp, 
+      netProfit: totalRev - totalExp, 
+      pendingPayments: pendingTotal, 
+      overdueCount,
+      lastTotalRev,
+      lastTotalExp,
+      revUp,
+      revTrendText,
+      expUp,
+      expTrendText
+    };
+  }, [revenues, expenses, language]);
 
   // ── Chart data: 6 months (unchanged logic) ───────────────────────
   const chartData = useMemo(() => {
@@ -149,25 +188,7 @@ const Dashboard = () => {
       .slice(0, 4),
   [expenses]);
 
-  // ── Custom bar for chart ─────────────────────────────────────────
-  const CustomBar = (props) => {
-    const { x, y, width, height, value } = props;
-    const isMax = value === Math.max(...chartData.map(d => d.revenues));
-    return (
-      <g>
-        <rect x={x} y={y} width={width} height={height} fill={isMax ? "#16A34A" : "#E8E8EC"} rx={4} />
-        {isMax && (
-          <g>
-            <rect x={x - 8} y={y - 26} width={width + 16} height={20} rx={10} fill="#1a1a2e" />
-            <text x={x + width / 2} y={y - 11} textAnchor="middle" fill="white" fontSize={10} fontWeight={500}>
-              {value > 999999 ? `${(value / 1000000).toFixed(1)}م` : value > 999 ? `${(value / 1000).toFixed(0)}ك` : value}
-            </text>
-          </g>
-        )}
-      </g>
-    );
-  };
-
+  // ── Custom bar removed in favor of AreaChart ────────────────────
   return (
     <PageWrapper title={t("dashboard")}>
       {/* ── 2-column content layout (sidebar is already fixed) ── */}
@@ -183,14 +204,6 @@ const Dashboard = () => {
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
               <SectionTitle>Overview</SectionTitle>
-              <button style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                padding: "6px 14px", borderRadius: "20px",
-                border: T.border, background: "transparent",
-                fontSize: "13px", color: "#6B6B80", cursor: "pointer",
-              }}>
-                {language === "ar" ? "الشهر الماضي" : "Last month"} <ChevronDown size={14} strokeWidth={1.75} />
-              </button>
             </div>
 
             {/* 2-col stat grid */}
@@ -203,9 +216,11 @@ const Dashboard = () => {
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: "10px", flexWrap: "wrap" }}>
                   <span style={T.bigNum}>{stats.totalRevenues.toLocaleString()}</span>
-                  <TrendBadge up={stats.netProfit >= 0} value={stats.netProfit >= 0 ? "↑ جيد" : "↓ خسارة"} />
+                  {stats.lastTotalRev > 0 && <TrendBadge up={stats.revUp} value={stats.revTrendText} />}
                 </div>
-                <p style={{ ...T.hint, marginTop: "4px" }}>{language === "ar" ? "مقابل الشهر الماضي" : "vs last month"}</p>
+                <p style={{ ...T.hint, marginTop: "4px" }}>
+                  {stats.lastTotalRev > 0 ? (language === "ar" ? "مقابل الشهر الماضي" : "vs last month") : (language === "ar" ? "لا توجد إيرادات مسجلة الشهر الماضي" : "No revenues last month")}
+                </p>
               </div>
 
               {/* Expenses stat */}
@@ -216,9 +231,11 @@ const Dashboard = () => {
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: "10px", flexWrap: "wrap" }}>
                   <span style={T.bigNum}>{stats.totalExpenses.toLocaleString()}</span>
-                  <TrendBadge up={false} value={`${stats.totalExpenses > 0 ? "↑" : "–"}`} />
+                  {stats.lastTotalExp > 0 && <TrendBadge up={!stats.expUp} value={stats.expTrendText} />}
                 </div>
-                <p style={{ ...T.hint, marginTop: "4px" }}>{language === "ar" ? "مقابل الشهر الماضي" : "vs last month"}</p>
+                <p style={{ ...T.hint, marginTop: "4px" }}>
+                  {stats.lastTotalExp > 0 ? (language === "ar" ? "مقابل الشهر الماضي" : "vs last month") : (language === "ar" ? "لا توجد مصروفات مسجلة الشهر الماضي" : "No expenses last month")}
+                </p>
               </div>
             </div>
 
@@ -235,36 +252,67 @@ const Dashboard = () => {
               </div>
             )}
 
-            {/* Pending + Net Profit pills */}
-            <div style={{ display: "flex", gap: "10px", marginTop: "16px", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <Clock size={14} strokeWidth={1.75} color="#9090A8" />
-                <span style={T.hint}>{t("pendingPayments") || "مدفوعات معلقة"}:</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#1a1a2e" }}>{stats.pendingPayments.toLocaleString()} ج.م</span>
+            {/* Advanced Analytics Pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-border">
+              
+              {/* Net Profit */}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1.5">
+                  <DollarSign size={14} strokeWidth={2} color="#9090A8" />
+                  <span style={T.hint}>{t("netProfit") || "صافي الربح"}</span>
+                </div>
+                <span style={{ fontSize: "16px", fontWeight: 600, color: stats.netProfit >= 0 ? "#16A34A" : "#DC2626" }}>
+                  {stats.netProfit > 0 ? "+" : ""}{stats.netProfit.toLocaleString()} ج.م
+                </span>
               </div>
-              <div style={{ width: "0.5px", background: "#E8E8EC" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <DollarSign size={14} strokeWidth={1.75} color="#9090A8" />
-                <span style={T.hint}>{t("netProfit") || "صافي الربح"}:</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: stats.netProfit >= 0 ? "#16A34A" : "#DC2626" }}>{stats.netProfit.toLocaleString()} ج.م</span>
+
+              {/* Profit Margin */}
+              <div className="flex flex-col gap-1 sm:border-r border-border sm:pr-4">
+                <div className="flex items-center gap-1.5">
+                  <PieChartIcon size={14} strokeWidth={2} color="#9090A8" />
+                  <span style={T.hint}>{language === "ar" ? "هامش الربح" : "Profit Margin"}</span>
+                </div>
+                <span style={{ fontSize: "16px", fontWeight: 600, color: stats.netProfit > 0 ? "#16A34A" : "#1a1a2e" }}>
+                  {stats.totalRevenues > 0 ? ((stats.netProfit / stats.totalRevenues) * 100).toFixed(1) : 0}%
+                </span>
               </div>
+
+              {/* Financial Health */}
+              <div className="flex flex-col gap-1 sm:border-r border-border sm:pr-4">
+                <div className="flex items-center gap-1.5">
+                  <Activity size={14} strokeWidth={2} color="#9090A8" />
+                  <span style={T.hint}>{language === "ar" ? "الحالة المالية" : "Health"}</span>
+                </div>
+                <span style={{ 
+                  fontSize: "12px", fontWeight: 600, marginTop: "2px",
+                  color: stats.netProfit > 0 ? "#16A34A" : (stats.netProfit === 0 ? "#CA8A04" : "#DC2626"),
+                  background: stats.netProfit > 0 ? "#DCFCE7" : (stats.netProfit === 0 ? "#FEF9C3" : "#FEE2E2"),
+                  padding: "2px 8px", borderRadius: "12px", width: "fit-content"
+                }}>
+                  {stats.netProfit > 0 ? (language === "ar" ? "ممتازة" : "Healthy") : (stats.netProfit === 0 ? (language === "ar" ? "مستقرة" : "Stable") : (language === "ar" ? "حرجة" : "Critical"))}
+                </span>
+              </div>
+
+              {/* Pending Payments */}
+              <div className="flex flex-col gap-1 sm:border-r border-border sm:pr-4">
+                <div className="flex items-center gap-1.5">
+                  <Clock size={14} strokeWidth={2} color="#9090A8" />
+                  <span style={T.hint}>{t("pendingPayments") || "مدفوعات معلقة"}</span>
+                </div>
+                <span style={{ fontSize: "16px", fontWeight: 600, color: "#CA8A04" }}>
+                  {stats.pendingPayments.toLocaleString()} ج.م
+                </span>
+              </div>
+
             </div>
           </div>
 
-          {/* ── Bar chart card ── */}
+          {/* ── Area chart card ── */}
           <div style={card}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
               <SectionTitle>
                 {language === "ar" ? "الإيرادات مقابل المصروفات" : "Revenue vs Expenses"}
               </SectionTitle>
-              <button style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                padding: "6px 14px", borderRadius: "20px",
-                border: T.border, background: "transparent",
-                fontSize: "13px", color: "#6B6B80", cursor: "pointer",
-              }}>
-                {language === "ar" ? "آخر 6 أشهر" : "Last 6 months"} <ChevronDown size={14} strokeWidth={1.75} />
-              </button>
             </div>
 
             <div style={{ fontSize: "32px", fontWeight: 500, color: "#1a1a2e", marginBottom: "12px" }}>
@@ -275,19 +323,29 @@ const Dashboard = () => {
                 : stats.totalRevenues.toLocaleString()} ج.م
             </div>
 
-            <div style={{ height: "200px", width: "100%" }}>
+            <div style={{ height: "220px", width: "100%", marginTop: "10px" }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} barGap={4} margin={{ top: 30, right: 0, left: 0, bottom: 0 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#16A34A" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#16A34A" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#DC2626" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#DC2626" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid vertical={false} stroke="#F0F0F4" strokeWidth={0.5} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#9090A8" }} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#9090A8" }} dy={10} />
                   <YAxis hide />
                   <Tooltip
-                    contentStyle={{ borderRadius: "10px", border: T.border, boxShadow: "none", fontSize: "12px" }}
-                    cursor={{ fill: "rgba(0,0,0,0.02)" }}
+                    contentStyle={{ borderRadius: "10px", border: T.border, boxShadow: "0 4px 20px rgba(0,0,0,0.05)", fontSize: "12px" }}
+                    cursor={{ stroke: '#E8E8EC', strokeWidth: 1, strokeDasharray: '4 4' }}
                   />
-                  <Bar dataKey="revenues" name={language === "ar" ? "الإيرادات" : "Revenue"} shape={<CustomBar />} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="expenses" name={language === "ar" ? "المصروفات" : "Expenses"} fill="#E8E8EC" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                </BarChart>
+                  <Area type="monotone" dataKey="revenues" name={language === "ar" ? "الإيرادات" : "Revenue"} stroke="#16A34A" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                  <Area type="monotone" dataKey="expenses" name={language === "ar" ? "المصروفات" : "Expenses"} stroke="#DC2626" strokeWidth={3} fillOpacity={1} fill="url(#colorExp)" />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
@@ -366,7 +424,7 @@ const Dashboard = () => {
               ))}
             </div>
 
-            <button style={{
+            <button onClick={() => navigate("/revenues")} style={{
               width: "100%", marginTop: "12px", padding: "8px",
               border: T.border, borderRadius: "20px",
               background: "transparent", cursor: "pointer",

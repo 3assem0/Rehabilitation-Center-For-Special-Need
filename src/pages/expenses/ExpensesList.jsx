@@ -107,12 +107,12 @@ const ExpensesList = () => {
     <PageWrapper title={t("expenses")}>
       <Toaster position="top-center" />
       
-      <div className="flex justify-between items-start mb-8">
+      <div className="flex flex-wrap justify-between items-start mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary">{t("expenses")}</h1>
           <p className="text-text-muted mt-1">تسجيل ومتابعة المصروفات التشغيلية والرواتب</p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap items-center">
           <div className="card !py-2 !px-4 flex items-center gap-3 border-danger/20 bg-danger/5">
             <span className="text-xs text-danger font-bold uppercase tracking-wider">إجمالي الشهر</span>
             <span className="text-xl font-bold text-danger">{totalThisMonth.toLocaleString()} ج.م</span>
@@ -142,7 +142,7 @@ const ExpensesList = () => {
         }
       >
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="w-full">
               <label className="block text-sm font-semibold mb-2 text-text">{t("category")}</label>
               <select 
@@ -179,7 +179,7 @@ const ExpensesList = () => {
             required 
           />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input 
               label={t("reference")} 
               name="reference" 

@@ -97,33 +97,39 @@ const Alerts = () => {
             <div 
               key={alert.id} 
               className={`
-                card flex items-start gap-4 p-5 transition-all hover:shadow-md border-r-4
+                card flex flex-col sm:flex-row items-start gap-4 p-5 transition-all hover:shadow-md border-r-4
                 ${alert.severity === 'high' ? 'border-r-danger' : alert.severity === 'medium' ? 'border-r-warning' : 'border-r-primary-light'}
               `}
             >
-              <div className={`
-                w-10 h-10 rounded-xl flex items-center justify-center shrink-0
-                ${alert.severity === 'high' ? 'bg-danger/10 text-danger' : alert.severity === 'medium' ? 'bg-warning/10 text-warning' : 'bg-primary-light/10 text-primary-light'}
-              `}>
-                {alert.icon}
-              </div>
-              
-              <div className="grow">
-                <div className="flex items-center justify-between gap-4 mb-1">
-                  <h3 className="font-bold text-text">{alert.title}</h3>
-                  <Badge variant={alert.severity === 'high' ? 'red' : alert.severity === 'medium' ? 'yellow' : 'blue'}>
-                    {t(alert.severity)}
-                  </Badge>
+              {/* Icon and Content Wrapper */}
+              <div className="flex items-start gap-3 sm:gap-4 grow w-full">
+                <div className={`
+                  w-10 h-10 rounded-xl flex items-center justify-center shrink-0
+                  ${alert.severity === 'high' ? 'bg-danger/10 text-danger' : alert.severity === 'medium' ? 'bg-warning/10 text-warning' : 'bg-primary-light/10 text-primary-light'}
+                `}>
+                  {alert.icon}
                 </div>
-                <p className="text-sm text-text-muted leading-relaxed">
-                  {alert.description}
-                </p>
+                
+                <div className="grow min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                    <h3 className="font-bold text-text text-sm sm:text-base truncate">{alert.title}</h3>
+                    <Badge variant={alert.severity === 'high' ? 'red' : alert.severity === 'medium' ? 'yellow' : 'blue'}>
+                      {t(alert.severity)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
+                    {alert.description}
+                  </p>
+                </div>
               </div>
 
-              <Button variant="ghost" size="sm" className="shrink-0 text-text-muted hover:text-success">
-                <CheckCircle2 size={18} />
-                <span className="text-xs mr-1">{t("acknowledged")}</span>
-              </Button>
+              {/* Action Button */}
+              <div className="w-full sm:w-auto shrink-0 flex justify-end mt-2 sm:mt-0 pt-3 sm:pt-0 border-t border-border sm:border-0">
+                <Button variant="ghost" size="sm" className="w-full sm:w-auto text-text-muted hover:text-success justify-center gap-1">
+                  <CheckCircle2 size={18} />
+                  <span className="text-xs">{t("acknowledged")}</span>
+                </Button>
+              </div>
             </div>
           ))
         ) : (

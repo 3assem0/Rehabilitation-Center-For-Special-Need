@@ -201,7 +201,7 @@ const AttendanceLog = () => {
       </div>
 
       {/* ── Summary stat strip ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         {[
           { label: language === "ar" ? "حاضر" : "Present",  value: summary.present, bg: "#DCFCE7", color: "#16A34A", icon: <CheckCircle size={16} strokeWidth={1.75} /> },
           { label: language === "ar" ? "غائب" : "Absent",   value: summary.absent,  bg: "#FEE2E2", color: "#DC2626", icon: <XCircle size={16} strokeWidth={1.75} /> },
@@ -411,7 +411,7 @@ const AttendanceLog = () => {
 
           {/* Time inputs — only for relevant statuses */}
           {["present", "late", "half_day"].includes(cellData.status) && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input
                 label={t("checkInTime")}
                 type="time"

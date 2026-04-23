@@ -153,15 +153,17 @@ const Sidebar = ({ className = "" }) => {
 
   // ── Sidebar panel ────────────────────────────────────────────────
   return (
-    <aside
+       <aside
       className={`sidebar z-[60] ${className}`}
+    
       style={{
         backgroundColor: "#ffffff",
         display: "flex",
         flexDirection: "column",
         padding: "20px 16px",
         overflowY: "auto",
-        boxShadow: "none",
+        borderRadius:"15px",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
       }}
     >
       {/* ── TOP: Logo + Search ── */}
@@ -321,6 +323,7 @@ const Sidebar = ({ className = "" }) => {
         </button>
       </div>
     </aside>
+   
   );
 };
 

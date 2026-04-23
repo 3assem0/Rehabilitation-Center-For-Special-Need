@@ -41,7 +41,7 @@ const PageLayout = ({ title, subtitle, actions, children }) => {
       </div>
 
       {/* Content */}
-      <div  style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         {children}
       </div>
     </div>

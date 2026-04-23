@@ -170,7 +170,7 @@ const EmployeesList = () => {
     <PageWrapper title={t("employees")}>
       <Toaster position="top-center" />
 
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary">{t("employees")}</h1>
           <p className="text-text-muted mt-1">إدارة الكادر الوظيفي والبيانات الأساسية</p>

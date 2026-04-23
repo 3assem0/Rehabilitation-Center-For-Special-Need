@@ -301,7 +301,7 @@ const PayrollSheet = () => {
       >
         {paymentModal && (
           <form onSubmit={handlePaymentSubmit} className="space-y-6">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-3 bg-bg rounded-lg text-center">
                 <p className="text-xs text-text-muted mb-1">الصافي</p>
                 <p className="font-bold">{paymentModal.netSalary} ج.م</p>
