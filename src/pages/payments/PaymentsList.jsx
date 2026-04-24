@@ -3,29 +3,29 @@ import PageWrapper from "../../components/layout/PageWrapper";
 import DataTable from "../../components/ui/DataTable";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import ConfirmModal from "../../components/ui/ConfirmModal";
 import Input from "../../components/ui/Input";
 import Badge from "../../components/ui/Badge";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
 import { useAuth } from "../../context/AuthContext";
 import { toast, Toaster } from "react-hot-toast";
-import { Plus, Search, Receipt, Wallet } from "lucide-react";
+import { Plus, Search, Receipt, Wallet, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 const PaymentsList = () => {
   const { t, language } = useTranslation();
   const { currentUser } = useAuth();
-  const { data: payments, addDocument } = useFirestore("payments");
+  const { data: payments, addDocument, deleteDocument } = useFirestore("payments");
   const { data: revenues, updateDocument } = useFirestore("revenues");
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRevenue, setSelectedRevenue] = useState(null);
   const [formData, setFormData] = useState({
-    amount: "",
-    paymentMethod: "cash",
     date: new Date().toISOString().split('T')[0],
     notes: ""
   });
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // row to delete
 
   const columns = [
     { header: t("clientName"), key: "clientName" },
@@ -36,8 +36,46 @@ const PaymentsList = () => {
       key: "date", 
       render: (val) => val.toDate ? format(val.toDate(), 'dd/MM/yyyy') : val 
     },
-    { header: "ملاحظات", key: "notes" }
+    { header: "ملاحظات", key: "notes" },
+    {
+      header: "إجراءات",
+      key: "actions",
+      render: (_, row) => (
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => setDeleteConfirm(row)} 
+          className="text-danger hover:bg-danger/10"
+        >
+          <Trash2 size={16} />
+        </Button>
+      )
+    }
   ];
+
+  const handleDelete = async (row) => {
+    try {
+      const revenue = revenues.find(r => r.id === row.revenueId);
+      if (revenue) {
+        const newPaidAmount = Math.max(0, (revenue.paidAmount || 0) - row.amount);
+        const remaining = revenue.totalAmount - newPaidAmount;
+        let status = "partial";
+        if (remaining === 0) status = "paid";
+        if (newPaidAmount === 0) status = "pending";
+
+        await updateDocument(revenue.id, {
+          paidAmount: newPaidAmount,
+          remainingAmount: remaining,
+          paymentStatus: status
+        });
+      }
+      await deleteDocument(row.id);
+      toast.success("تم حذف الدفعة بنجاح واسترداد الإيراد");
+      setDeleteConfirm(null);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -197,6 +235,12 @@ const PaymentsList = () => {
           </div>
         </form>
       </Modal>
+      <ConfirmModal 
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => handleDelete(deleteConfirm)}
+        message="هل أنت متأكد من حذف هذه الدفعة؟ سيعود المبلغ كمتبقي في الإيراد المرتبط."
+      />
     </PageWrapper>
   );
 };

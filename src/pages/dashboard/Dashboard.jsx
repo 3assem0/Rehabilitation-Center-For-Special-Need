@@ -1,8 +1,13 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import PageWrapper from "../../components/layout/PageWrapper";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
+import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import Modal from "../../components/ui/Modal";
+import Input from "../../components/ui/Input";
+import Button from "../../components/ui/Button";
+import { toast, Toaster } from "react-hot-toast";
 import {
   TrendingUp,
   TrendingDown,
@@ -11,19 +16,15 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   PieChart as PieChartIcon,
-  BarChart3,
   Clock,
-  ChevronDown,
   ArrowRight,
   Activity,
+  Plus,
+  UserPlus
 } from "lucide-react";
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -78,24 +79,80 @@ const SectionTitle = ({ children }) => (
 // ─── Main Dashboard ───────────────────────────────────────────────
 const Dashboard = () => {
   const { t, language } = useTranslation();
+  const { currentUser } = useAuth();
   const locale = language === "ar" ? ar : enUS;
   const navigate = useNavigate();
 
-  // ── Real data hooks (unchanged) ──────────────────────────────────
-  const { data: revenues } = useFirestore("revenues");
+  // ── Real data hooks ──────────────────────────────────
+  const { data: revenues, addDocument: addRevenue } = useFirestore("revenues");
   const { data: expenses } = useFirestore("expenses");
+  const { addDocument: addEmployee } = useFirestore("employees");
   const { data: payments } = useFirestore("payments");
+  const { data: pettyCash } = useFirestore("petty_cash");
 
-  // ── KPI stats (unchanged logic) ──────────────────────────────────
+  // ── Quick Add Modals State ───────────────────────────
+  const [quickAddType, setQuickAddType] = useState(null); // 'employee' | 'revenue'
+  const [formData, setFormData] = useState({});
+
+  const handleQuickAddChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleQuickAddSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (quickAddType === 'employee') {
+        await addEmployee({
+          nameAr: formData.nameAr || "",
+          name: formData.name || "",
+          jobTitle: formData.jobTitle || "",
+          monthlySalary: Number(formData.monthlySalary || 0),
+          hourlyRate: 0,
+          overtimeRate: 1.5,
+          isActive: true,
+          startDate: new Date().toISOString().split('T')[0]
+        });
+        toast.success("تمت إضافة الموظف بنجاح");
+      } else if (quickAddType === 'revenue') {
+        const total = Number(formData.totalAmount || 0);
+        await addRevenue({
+          clientName: formData.clientName || "",
+          type: formData.type || "monthly_fee",
+          totalAmount: total,
+          paidAmount: 0,
+          remainingAmount: total,
+          paymentStatus: "pending",
+          date: formData.date || new Date().toISOString().split('T')[0],
+          paymentMethod: formData.paymentMethod || "cash",
+          notes: formData.notes || "",
+          isRecurring: !!formData.isRecurring,
+          createdBy: currentUser.uid
+        });
+        toast.success("تمت إضافة الإيراد بنجاح");
+      }
+      setQuickAddType(null);
+      setFormData({});
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  // ── KPI stats ──────────────────────────────────
   const stats = useMemo(() => {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const lastMonth = subMonths(now, 1);
 
+    // Current month revenues including recurring from past months
     const currentRevenues = revenues.filter(r => {
       if (!r.date) return false;
-      return isSameMonth(new Date(r.date.toDate ? r.date.toDate() : r.date), now);
+      const d = new Date(r.date.toDate ? r.date.toDate() : r.date);
+      if (isSameMonth(d, now)) return true;
+      if (r.isRecurring && d < now) return true; // Include recurring past revenues
+      return false;
     });
+
     const currentExpenses = expenses.filter(e => {
       if (!e.date) return false;
       return isSameMonth(new Date(e.date.toDate ? e.date.toDate() : e.date), now);
@@ -103,20 +160,33 @@ const Dashboard = () => {
 
     const lastMonthRevenues = revenues.filter(r => {
       if (!r.date) return false;
-      return isSameMonth(new Date(r.date.toDate ? r.date.toDate() : r.date), lastMonth);
+      const d = new Date(r.date.toDate ? r.date.toDate() : r.date);
+      if (isSameMonth(d, lastMonth)) return true;
+      if (r.isRecurring && d < lastMonth) return true;
+      return false;
     });
+
     const lastMonthExpenses = expenses.filter(e => {
       if (!e.date) return false;
       return isSameMonth(new Date(e.date.toDate ? e.date.toDate() : e.date), lastMonth);
     });
 
+    const currentPettySpends = pettyCash.filter(p => {
+      if (p.type !== 'spend') return false;
+      if (!p.date) return false;
+      return isSameMonth(new Date(p.date.toDate ? p.date.toDate() : p.date), now);
+    });
+
     const totalRev = currentRevenues.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
-    const totalExp = currentExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    const totalExp = currentExpenses.reduce((sum, e) => sum + (e.amount || 0), 0) + currentPettySpends.reduce((sum, p) => sum + (p.amount || 0), 0);
+    
+    // Calculate total paid this month (for new "المدفوعات الحالية" stat)
+    const totalPaidThisMonth = currentRevenues.reduce((sum, r) => sum + (r.paidAmount || 0), 0);
     
     const lastTotalRev = lastMonthRevenues.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
     const lastTotalExp = lastMonthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-    const pendingTotal = revenues.reduce((sum, r) => sum + (r.remainingAmount || 0), 0);
+    const pendingTotal = currentRevenues.reduce((sum, r) => sum + (r.remainingAmount || r.totalAmount || 0), 0);
 
     const overdueCount = revenues.filter(r => {
       if (!r.date) return false;
@@ -136,6 +206,7 @@ const Dashboard = () => {
       totalRevenues: totalRev, 
       totalExpenses: totalExp, 
       netProfit: totalRev - totalExp, 
+      totalPaidThisMonth,
       pendingPayments: pendingTotal, 
       overdueCount,
       lastTotalRev,
@@ -145,24 +216,43 @@ const Dashboard = () => {
       expUp,
       expTrendText
     };
-  }, [revenues, expenses, language]);
+  }, [revenues, expenses, pettyCash, language]);
 
-  // ── Chart data: 6 months (unchanged logic) ───────────────────────
+  // ── Chart data: 6 months ───────────────────────
   const chartData = useMemo(() => {
     const months = Array.from({ length: 6 }).map((_, i) => subMonths(new Date(), i)).reverse();
     return months.map(month => {
-      const monthRev = revenues.filter(r => r.date && isSameMonth(new Date(r.date.toDate ? r.date.toDate() : r.date), month)).reduce((s, r) => s + (r.totalAmount || 0), 0);
+      const monthRev = revenues.filter(r => {
+        if (!r.date) return false;
+        const d = new Date(r.date.toDate ? r.date.toDate() : r.date);
+        if (isSameMonth(d, month)) return true;
+        if (r.isRecurring && d < month) return true;
+        return false;
+      }).reduce((s, r) => s + (r.totalAmount || 0), 0);
+
       const monthExp = expenses.filter(e => e.date && isSameMonth(new Date(e.date.toDate ? e.date.toDate() : e.date), month)).reduce((s, e) => s + (e.amount || 0), 0);
       return { name: format(month, "MMM", { locale }), revenues: monthRev, expenses: monthExp };
     });
   }, [revenues, expenses, locale]);
 
-  // ── Pie data: expense categories (unchanged logic) ───────────────
+  // ── Pie data: current month expense categories ───────────────
   const pieData = useMemo(() => {
+    const now = new Date();
     const cats = {};
-    expenses.forEach(e => { cats[e.category] = (cats[e.category] || 0) + e.amount; });
+    
+    // Regular expenses
+    expenses.filter(e => e.date && isSameMonth(new Date(e.date.toDate ? e.date.toDate() : e.date), now))
+      .forEach(e => { cats[e.category] = (cats[e.category] || 0) + e.amount; });
+    
+    // Petty cash spends
+    pettyCash.filter(p => p.type === 'spend' && p.date && isSameMonth(new Date(p.date.toDate ? p.date.toDate() : p.date), now))
+      .forEach(p => { 
+        const cat = p.category || 'other';
+        cats[cat] = (cats[cat] || 0) + p.amount; 
+      });
+
     return Object.keys(cats).map(cat => ({ name: t(cat) || cat, value: cats[cat] }));
-  }, [expenses, t]);
+  }, [expenses, pettyCash, t]);
 
   const PIE_COLORS = ["#6366F1", "#E85C3A", "#16A34A", "#F59E0B", "#9090A8", "#0F766E"];
 
@@ -188,10 +278,10 @@ const Dashboard = () => {
       .slice(0, 4),
   [expenses]);
 
-  // ── Custom bar removed in favor of AreaChart ────────────────────
   return (
     <PageWrapper title={t("dashboard")}>
-      {/* ── 2-column content layout (sidebar is already fixed) ── */}
+      <Toaster position="top-center" />
+      {/* ── 2-column content layout ── */}
       <div className="flex flex-col lg:flex-row gap-4 items-start w-full">
 
         {/* ════════════════════════════════════════════
@@ -203,7 +293,7 @@ const Dashboard = () => {
           <div style={card}>
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
-              <SectionTitle>Overview</SectionTitle>
+              <SectionTitle>نظرة عامة على الأداء المالي</SectionTitle>
             </div>
 
             {/* 2-col stat grid */}
@@ -277,19 +367,14 @@ const Dashboard = () => {
                 </span>
               </div>
 
-              {/* Financial Health */}
+              {/* Current Payments (Replaced Financial Health) */}
               <div className="flex flex-col gap-1 sm:border-r border-border sm:pr-4">
                 <div className="flex items-center gap-1.5">
                   <Activity size={14} strokeWidth={2} color="#9090A8" />
-                  <span style={T.hint}>{language === "ar" ? "الحالة المالية" : "Health"}</span>
+                  <span style={T.hint}>{language === "ar" ? "المدفوعات الحالية" : "Current Payments"}</span>
                 </div>
-                <span style={{ 
-                  fontSize: "12px", fontWeight: 600, marginTop: "2px",
-                  color: stats.netProfit > 0 ? "#16A34A" : (stats.netProfit === 0 ? "#CA8A04" : "#DC2626"),
-                  background: stats.netProfit > 0 ? "#DCFCE7" : (stats.netProfit === 0 ? "#FEF9C3" : "#FEE2E2"),
-                  padding: "2px 8px", borderRadius: "12px", width: "fit-content"
-                }}>
-                  {stats.netProfit > 0 ? (language === "ar" ? "ممتازة" : "Healthy") : (stats.netProfit === 0 ? (language === "ar" ? "مستقرة" : "Stable") : (language === "ar" ? "حرجة" : "Critical"))}
+                <span style={{ fontSize: "16px", fontWeight: 600, color: "#16A34A" }}>
+                  {stats.totalPaidThisMonth.toLocaleString()} ج.م
                 </span>
               </div>
 
@@ -368,12 +453,34 @@ const Dashboard = () => {
               </ResponsiveContainer>
             </div>
           </div>
+
         </div>
 
         {/* ════════════════════════════════════════════
             RIGHT PANEL (280px)
         ════════════════════════════════════════════ */}
         <div className="w-full lg:w-[280px] shrink-0 flex flex-col gap-4">
+
+          {/* Quick Actions Card */}
+          <div style={{ ...card, padding: "16px" }}>
+            <SectionTitle>إجراءات سريعة</SectionTitle>
+            <div className="flex flex-col gap-2 mt-4">
+              <Button 
+                variant="secondary" 
+                className="w-full justify-center gap-2 border-primary/20 text-primary hover:bg-primary/5"
+                onClick={() => setQuickAddType('revenue')}
+              >
+                <Plus size={16} /> إضافة إيراد / مريض
+              </Button>
+              <Button 
+                variant="secondary" 
+                className="w-full justify-center gap-2 border-primary/20 text-primary hover:bg-primary/5"
+                onClick={() => setQuickAddType('employee')}
+              >
+                <UserPlus size={16} /> إضافة موظف جديد
+              </Button>
+            </div>
+          </div>
 
           {/* ── Recent Revenues list ── */}
           <div style={card}>
@@ -390,7 +497,6 @@ const Dashboard = () => {
                 <div key={r.id || i}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", overflow: "hidden" }}>
-                      {/* Colored initials circle */}
                       <div style={{
                         width: "40px", height: "40px", borderRadius: "8px", flexShrink: 0,
                         background: ["#DCFCE7","#FEE2E2","#EEF2FF","#FEF9C3","#F0FDF4"][i % 5],
@@ -398,11 +504,11 @@ const Dashboard = () => {
                         fontSize: "13px", fontWeight: 500,
                         color: ["#16A34A","#DC2626","#6366F1","#CA8A04","#16A34A"][i % 5],
                       }}>
-                        {(r.patientName || r.description || "R").charAt(0).toUpperCase()}
+                        {(r.clientName || r.description || "R").charAt(0).toUpperCase()}
                       </div>
                       <div style={{ overflow: "hidden" }}>
                         <p style={{ fontSize: "13px", fontWeight: 500, color: "#1a1a2e", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {r.patientName || r.description || (language === "ar" ? "إيراد" : "Revenue")}
+                          {r.clientName || r.description || (language === "ar" ? "إيراد" : "Revenue")}
                         </p>
                         <p style={{ ...T.hint, marginTop: "1px" }}>
                           {r.date ? format(r.date.toDate ? r.date.toDate() : new Date(r.date), "d MMM", { locale }) : "—"}
@@ -434,55 +540,101 @@ const Dashboard = () => {
               {language === "ar" ? "عرض كل الإيرادات" : "All revenues"} <ArrowRight size={14} strokeWidth={1.75} />
             </button>
           </div>
-
-          {/* ── Recent Expenses / Activity ── */}
-          <div style={card}>
-            <div style={{ marginBottom: "16px" }}>
-              <SectionTitle>{language === "ar" ? "آخر المصروفات" : "Recent Expenses"}</SectionTitle>
-            </div>
-
-            {recentExpenses.length === 0 && (
-              <p style={T.hint}>{language === "ar" ? "لا توجد بيانات" : "No data yet"}</p>
-            )}
-
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {recentExpenses.map((e, i) => (
-                <div key={e.id || i}>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 0" }}>
-                    <div style={{
-                      width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0,
-                      background: "#FEE2E2",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "12px", fontWeight: 500, color: "#DC2626",
-                    }}>
-                      {(e.description || e.category || "E").charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1, overflow: "hidden" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
-                        <span style={{ fontSize: "13px", fontWeight: 500, color: "#1a1a2e" }}>
-                          {e.description || (language === "ar" ? "مصروف" : "Expense")}
-                        </span>
-                        {e.category && (
-                          <span style={{ fontSize: "13px", color: "#2563EB" }}>· {t(e.category) || e.category}</span>
-                        )}
-                      </div>
-                      <p style={{ ...T.hint, marginTop: "2px" }}>
-                        {e.date ? format(e.date.toDate ? e.date.toDate() : new Date(e.date), "d MMM", { locale }) : "—"}
-                        {" · "}
-                        <span style={{ fontWeight: 500, color: "#DC2626" }}>{(e.amount || 0).toLocaleString()} ج.م</span>
-                      </p>
-                    </div>
-                  </div>
-                  {i < recentExpenses.length - 1 && <div style={{ height: "0.5px", background: "#F0F0F4" }} />}
-                </div>
-              ))}
-            </div>
-          </div>
-
         </div>
-        {/* ── END right panel ── */}
 
       </div>
+
+      {/* Quick Add Modals */}
+      <Modal 
+        isOpen={!!quickAddType} 
+        onClose={() => { setQuickAddType(null); setFormData({}); }}
+        title={quickAddType === 'employee' ? "إضافة موظف جديد بسرعة" : "إضافة إيراد / مريض جديد"}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { setQuickAddType(null); setFormData({}); }}>إلغاء</Button>
+            <Button onClick={handleQuickAddSubmit}>حفظ وإضافة</Button>
+          </>
+        }
+      >
+        <form onSubmit={handleQuickAddSubmit} className="space-y-4">
+          {quickAddType === 'employee' ? (
+            <>
+              <Input label="اسم الموظف (بالعربية)" name="nameAr" value={formData.nameAr || ''} onChange={handleQuickAddChange} required />
+              <Input label="المسمى الوظيفي" name="jobTitle" value={formData.jobTitle || ''} onChange={handleQuickAddChange} required />
+              <Input label="الراتب الشهري (ج.م)" type="number" name="monthlySalary" value={formData.monthlySalary || ''} onChange={handleQuickAddChange} required />
+            </>
+          ) : (
+            <>
+              <Input label="اسم العميل / المريض" name="clientName" value={formData.clientName || ''} onChange={handleQuickAddChange} required />
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="w-full">
+                  <label className="block text-sm font-semibold mb-2 text-text">{t("revenueType") || "نوع الإيراد"}</label>
+                  <select 
+                    name="type" 
+                    className="input" 
+                    value={formData.type || "monthly_fee"} 
+                    onChange={handleQuickAddChange}
+                  >
+                    <option value="monthly_fee">{t("monthly_fee") || "رسوم شهرية"}</option>
+                    <option value="assessment">{t("assessment") || "تقييم"}</option>
+                    <option value="overtime">{t("overtime") || "وقت إضافي"}</option>
+                    <option value="life_skills">{t("life_skills") || "مهارات حياة"}</option>
+                    <option value="therapy">{t("therapy") || "جلسات علاجية"}</option>
+                    <option value="activities">{t("activities") || "أنشطة"}</option>
+                    <option value="other">{t("other") || "أخرى"}</option>
+                  </select>
+                </div>
+                
+                <Input label="المبلغ الإجمالي (ج.م)" type="number" name="totalAmount" value={formData.totalAmount || ''} onChange={handleQuickAddChange} required />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="w-full">
+                  <label className="block text-sm font-semibold mb-2 text-text">{t("paymentMethod") || "طريقة الدفع"}</label>
+                  <select 
+                    name="paymentMethod" 
+                    className="input" 
+                    value={formData.paymentMethod || "cash"} 
+                    onChange={handleQuickAddChange}
+                  >
+                    <option value="cash">{t("cash") || "نقداً"}</option>
+                    <option value="bank_transfer">{t("bank_transfer") || "تحويل بنكي"}</option>
+                    <option value="check">{t("check") || "شيك"}</option>
+                  </select>
+                </div>
+                
+                <Input label={t("date") || "التاريخ"} type="date" name="date" value={formData.date || new Date().toISOString().split('T')[0]} onChange={handleQuickAddChange} required />
+              </div>
+
+              <div className="flex items-center gap-3 p-4 bg-bg rounded-xl border border-border mt-4">
+                <input
+                  type="checkbox"
+                  id="isRecurring"
+                  name="isRecurring"
+                  checked={formData.isRecurring || false}
+                  onChange={(e) => setFormData(p => ({ ...p, isRecurring: e.target.checked }))}
+                  className="w-5 h-5 accent-primary cursor-pointer"
+                />
+                <label htmlFor="isRecurring" className="text-sm font-semibold cursor-pointer select-none">
+                  حالة متكررة (تُحسب تلقائياً كل شهر)
+                </label>
+              </div>
+
+              <div className="w-full">
+                <label className="block text-sm font-semibold mb-2 text-text">ملاحظات</label>
+                <textarea 
+                  name="notes" 
+                  className="input min-h-[100px]" 
+                  value={formData.notes || ''} 
+                  onChange={handleQuickAddChange}
+                ></textarea>
+              </div>
+            </>
+          )}
+        </form>
+      </Modal>
+
     </PageWrapper>
   );
 };

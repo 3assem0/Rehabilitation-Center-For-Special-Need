@@ -3,21 +3,23 @@ import PageWrapper from "../../components/layout/PageWrapper";
 import DataTable from "../../components/ui/DataTable";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import ConfirmModal from "../../components/ui/ConfirmModal";
 import Input from "../../components/ui/Input";
 import Badge from "../../components/ui/Badge";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
 import { useAuth } from "../../context/AuthContext";
 import { toast, Toaster } from "react-hot-toast";
-import { MinusCircle, Edit2 } from "lucide-react";
+import { MinusCircle, Edit2, Trash2 } from "lucide-react";
 
 const ExpensesList = () => {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
-  const { data: expenses, loading, addDocument, updateDocument } = useFirestore("expenses");
+  const { data: expenses, loading, addDocument, updateDocument, deleteDocument } = useFirestore("expenses");
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   
   const initialFormState = {
     category: "rent",
@@ -55,15 +57,33 @@ const ExpensesList = () => {
       header: "إجراءات",
       key: "actions",
       render: (_, row) => (
-        <button 
-          onClick={(e) => handleEditClick(row, e)}
-          className="p-2 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg"
-        >
-          <Edit2 size={16} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={(e) => handleEditClick(row, e)}
+            className="p-2 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg"
+          >
+            <Edit2 size={16} />
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); setDeleteConfirm(row.id); }}
+            className="p-2 text-danger hover:bg-danger/10 transition-colors rounded-lg"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
       )
     }
   ];
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteDocument(id);
+      toast.success("تم الحذف بنجاح");
+      setDeleteConfirm(null);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -199,6 +219,12 @@ const ExpensesList = () => {
           </div>
         </form>
       </Modal>
+      <ConfirmModal 
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => handleDelete(deleteConfirm)}
+        message="هل أنت متأكد من حذف هذا المصروف؟"
+      />
     </PageWrapper>
   );
 };

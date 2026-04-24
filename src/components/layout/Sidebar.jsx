@@ -44,30 +44,39 @@ const Sidebar = ({ className = "" }) => {
     const now = new Date();
     let count = 0;
 
-    // Overdue revenues (> 30 days, unpaid)
+    // Load dismissed alerts from localStorage
+    let dismissed = {};
+    try {
+      const stored = localStorage.getItem("dismissed_alerts");
+      if (stored) dismissed = JSON.parse(stored);
+    } catch (e) {}
+
+    const isDismissed = (id) => {
+      const timestamp = dismissed[id];
+      if (!timestamp) return false;
+      return (Date.now() - timestamp) < 86400000; // 24 hours
+    };
+
+    // 1. Overdue revenues (> 30 days, unpaid)
     revenues.forEach(rev => {
       if (rev.paymentStatus === "paid") return;
       const d = rev.date?.toDate ? rev.date.toDate() : new Date(rev.date);
-      if (differenceInDays(now, d) > 30) count++;
+      if (differenceInDays(now, d) > 30) {
+        if (!isDismissed(`rev-${rev.id}`)) count++;
+      }
     });
 
-    // Unpaid salaries this month
+    // 2. Unpaid salaries this month
     const monthKey = format(now, "yyyy-MM");
     employees.filter(e => e.isActive).forEach(emp => {
-      const paid = payroll.find(p => p.employeeId === emp.id && p.month === monthKey && p.isPaid);
-      if (!paid) count++;
-    });
-
-    // Petty cash below 20% limit
-    employees.forEach(emp => {
-      const balance = transactions
-        .filter(tx => tx.employeeId === emp.id)
-        .reduce((s, tx) => tx.type === "spend" ? s - tx.amount : s + tx.amount, 0);
-      if ((emp.pettyCashLimit || 0) > 0 && balance < emp.pettyCashLimit * 0.2) count++;
+      const isPaid = payroll.find(p => p.employeeId === emp.id && p.month === monthKey && p.paymentStatus === 'paid');
+      if (!isPaid) {
+        if (!isDismissed(`sal-${emp.id}-${monthKey}`)) count++;
+      }
     });
 
     return count;
-  }, [revenues, employees, payroll, transactions]);
+  }, [revenues, employees, payroll]);
 
   const toggleLanguage = () => {
     dispatch({ actionType: "SET_LANGUAGE", payload: language === "ar" ? "en" : "ar" });
@@ -193,9 +202,9 @@ const Sidebar = ({ className = "" }) => {
               )}
               <div style={{ lineHeight: 1.2 }}>
                 <span style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a2e", letterSpacing: "0.02em" }}>
-                  Sunrise
+                  {language === "ar" ? "مركز التأهيل" : "Rehab Center"}
                 </span>
-                <span style={{ fontSize: "11px", color: "#9090A8", margin: "5px" }}>v1.0</span>
+                <span style={{ fontSize: "11px", color: "#9090A8", margin: "5px" }}>v1.2</span>
               </div>
             </div>
             <button 

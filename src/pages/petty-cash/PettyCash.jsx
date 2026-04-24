@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import PageWrapper from "../../components/layout/PageWrapper";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import ConfirmModal from "../../components/ui/ConfirmModal";
 import Input from "../../components/ui/Input";
 import Badge from "../../components/ui/Badge";
 import { useFirestore } from "../../hooks/useFirestore";
@@ -13,66 +14,87 @@ import {
   Wallet, 
   ArrowUpCircle, 
   ArrowDownCircle, 
-  History, 
-  Plus, 
-  Minus,
-  AlertCircle
+  AlertCircle,
+  Edit2,
+  Trash2
 } from "lucide-react";
 import DataTable from "../../components/ui/DataTable";
 
 const PettyCash = () => {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const { currentUser } = useAuth();
-  const { data: employees } = useFirestore("employees");
-  const { data: transactions, addDocument } = useFirestore("petty_cash");
+  // Using global petty_cash collection without filtering by employee
+  const { data: transactions, addDocument, updateDocument, deleteDocument } = useFirestore("petty_cash");
   
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [actionModal, setActionModal] = useState(null); // 'topup' | 'spend'
+  const [editingTx, setEditingTx] = useState(null);
   const [formData, setFormData] = useState({ amount: "", category: "supplies", purpose: "" });
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // Calculate current balances for all employees
-  const employeeBalances = useMemo(() => {
-    const balances = {};
-    employees.forEach(emp => {
-      const empTx = transactions.filter(tx => tx.employeeId === emp.id);
-      const total = empTx.reduce((sum, tx) => {
-        return tx.type === 'spend' ? sum - tx.amount : sum + tx.amount;
-      }, 0);
-      balances[emp.id] = total;
-    });
-    return balances;
-  }, [employees, transactions]);
+  // Calculate global balance
+  const globalBalance = useMemo(() => {
+    return transactions.reduce((sum, tx) => {
+      return tx.type === 'spend' ? sum - tx.amount : sum + tx.amount;
+    }, 0);
+  }, [transactions]);
 
   const handleAction = async (e) => {
     e.preventDefault();
     const amount = Number(formData.amount);
-    const balance = employeeBalances[selectedEmployee.id] || 0;
 
-    if (actionModal === 'spend') {
-      if (amount > balance) {
+    if (actionModal === 'spend' && !editingTx) {
+      if (amount > globalBalance) {
         return toast.error("رصيد العهدة غير كافٍ");
-      }
-    } else if (actionModal === 'topup') {
-      if (balance + amount > selectedEmployee.pettyCashLimit) {
-        return toast.error("المبلغ يتجاوز حد العهدة المسموح به لهذا الموظف");
       }
     }
 
     try {
-      await addDocument({
-        employeeId: selectedEmployee.id,
-        type: actionModal,
-        amount: amount,
-        category: formData.category,
-        purpose: formData.purpose,
-        currentBalance: actionModal === 'spend' ? balance - amount : balance + amount,
-        date: new Date(),
-        createdBy: currentUser.uid
-      });
-      toast.success(t("successfullyUpdated"));
+      if (editingTx) {
+        // Calculate new balance diff
+        const oldAmount = editingTx.type === 'spend' ? -editingTx.amount : editingTx.amount;
+        const newAmount = editingTx.type === 'spend' ? -amount : amount;
+        
+        await updateDocument(editingTx.id, {
+          amount: amount,
+          category: editingTx.type === 'spend' ? formData.category : 'topup',
+          purpose: formData.purpose,
+        });
+        toast.success("تم التعديل بنجاح");
+      } else {
+        await addDocument({
+          type: actionModal,
+          amount: amount,
+          category: actionModal === 'spend' ? formData.category : 'topup',
+          purpose: formData.purpose,
+          currentBalance: actionModal === 'spend' ? globalBalance - amount : globalBalance + amount,
+          date: new Date(),
+          createdBy: currentUser.uid
+        });
+        toast.success(t("successfullyUpdated"));
+      }
       setActionModal(null);
+      setEditingTx(null);
       setFormData({ amount: "", category: "supplies", purpose: "" });
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleEdit = (tx) => {
+    setEditingTx(tx);
+    setActionModal(tx.type);
+    setFormData({
+      amount: tx.amount,
+      category: tx.category || "supplies",
+      purpose: tx.purpose || ""
+    });
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteDocument(id);
+      toast.success(t("successfullyDeleted"));
+      setDeleteConfirm(null);
     } catch (error) {
       toast.error(error.message);
     }
@@ -88,8 +110,8 @@ const PettyCash = () => {
         </Badge>
       )
     },
-    { header: "الفئة", key: "category", render: (val) => t(val) },
-    { header: "المبلغ", key: "amount", render: (val) => <span className="font-bold">{val} ج.م</span> },
+    { header: "الفئة", key: "category", render: (val) => t(val) || val },
+    { header: "المبلغ", key: "amount", render: (val) => <span className="font-bold text-lg">{val} ج.م</span> },
     { header: "الغرض", key: "purpose" },
     { 
       header: "التاريخ", 
@@ -101,6 +123,20 @@ const PettyCash = () => {
           return format(d, 'dd/MM/yyyy HH:mm');
         } catch { return '---'; }
       }
+    },
+    {
+      header: "إجراءات",
+      key: "actions",
+      render: (_, row) => (
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => handleEdit(row)} className="text-primary-light hover:text-primary">
+            <Edit2 size={16} />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(row.id)} className="text-danger">
+            <Trash2 size={16} />
+          </Button>
+        </div>
+      )
     }
   ];
 
@@ -110,101 +146,60 @@ const PettyCash = () => {
       
       <div className="mb-10">
         <h1 className="text-2xl font-bold text-primary">{t("pettyCash")}</h1>
-        <p className="text-text-muted mt-1">إدارة العهد النقدية للموظفين ومتابعة المصروفات النثرية</p>
+        <p className="text-text-muted mt-1">إدارة العهدة النقدية العامة ومتابعة المصروفات النثرية</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {employees.map(emp => {
-          const balance = employeeBalances[emp.id] || 0;
-          const usagePercent = Math.min(100, (balance / emp.pettyCashLimit) * 100);
-          
-          return (
-            <div key={emp.id} className="card group hover:border-primary/30 transition-all flex flex-col h-full">
-              <div className="flex items-start justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold">
-                    {(language === 'ar' ? emp.nameAr : emp.name).charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-primary">{language === 'ar' ? emp.nameAr : emp.name}</h3>
-                    <p className="text-xs text-text-muted">{emp.jobTitle}</p>
-                  </div>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => { setSelectedEmployee(emp); setIsHistoryOpen(true); }}
-                >
-                  <History size={18} />
-                </Button>
-              </div>
+      <div className="card max-w-3xl mx-auto mb-10 text-center py-10 shadow-lg shadow-primary/5">
+        <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Wallet size={36} className="text-primary" />
+        </div>
+        <p className="text-text-muted font-bold uppercase tracking-widest text-sm mb-2">الرصيد المتاح في العهدة</p>
+        <h2 className="text-5xl font-black text-primary mb-8">{globalBalance.toLocaleString()} ج.م</h2>
 
-              <div className="mb-4">
-                <div className="flex justify-between items-end mb-2">
-                  <span className="text-2xl font-black text-primary">{balance.toLocaleString()} ج.م</span>
-                  <span className="text-xs text-text-muted">من {emp.pettyCashLimit} ج.م</span>
-                </div>
-                <div className="w-full h-2 bg-bg rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full transition-all duration-1000 ${usagePercent < 20 ? 'bg-danger' : 'bg-success'}`}
-                    style={{ width: `${usagePercent}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="mt-auto grid grid-cols-2 gap-3 pt-4 border-t border-border">
-                <Button 
-                  variant="secondary" 
-                  size="sm" 
-                  onClick={() => { setSelectedEmployee(emp); setActionModal('spend'); }}
-                  className="gap-1 text-danger border-danger/20 hover:bg-danger/5"
-                >
-                  <ArrowDownCircle size={14} />
-                  صرف عهدة
-                </Button>
-                <Button 
-                  variant="secondary" 
-                  size="sm" 
-                  onClick={() => { setSelectedEmployee(emp); setActionModal('topup'); }}
-                  className="gap-1 text-success border-success/20 hover:bg-success/5"
-                >
-                  <ArrowUpCircle size={14} />
-                  تعبئة عهدة
-                </Button>
-              </div>
-            </div>
-          );
-        })}
+        <div className="flex items-center justify-center gap-4">
+          <Button 
+            onClick={() => setActionModal('spend')}
+            className="gap-2 text-white bg-danger hover:bg-danger/90 border-transparent px-8 py-3 text-lg"
+          >
+            <ArrowDownCircle size={20} />
+            صرف من العهدة
+          </Button>
+          <Button 
+            onClick={() => setActionModal('topup')}
+            className="gap-2 text-white bg-success hover:bg-success/90 border-transparent px-8 py-3 text-lg"
+          >
+            <ArrowUpCircle size={20} />
+            تعبئة العهدة
+          </Button>
+        </div>
       </div>
 
-      {/* History Modal */}
-      <Modal
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        title={selectedEmployee ? `سجل معاملات: ${language === 'ar' ? selectedEmployee.nameAr : selectedEmployee.name}` : ''}
-      >
-        {selectedEmployee && (
-          <DataTable 
-            columns={txColumns} 
-            data={transactions.filter(tx => tx.employeeId === selectedEmployee.id)} 
-            searchPlaceholder="بحث في المعاملات..."
-          />
-        )}
-      </Modal>
+      <div className="card">
+        <h3 className="font-bold text-primary mb-6">سجل حركات العهدة</h3>
+        <DataTable 
+          columns={txColumns} 
+          data={transactions.sort((a, b) => {
+            const da = a.date?.toDate ? a.date.toDate() : new Date(a.date || 0);
+            const db = b.date?.toDate ? b.date.toDate() : new Date(b.date || 0);
+            return db - da;
+          })} 
+          searchPlaceholder="بحث في المعاملات..."
+        />
+      </div>
 
-      {/* Action Modal (Spend/TopUp) */}
+      {/* Action Modal (Spend/TopUp/Edit) */}
       <Modal
         isOpen={!!actionModal}
-        onClose={() => setActionModal(null)}
-        title={actionModal === 'spend' ? 'صرف من العهدة النقدية' : 'تعبئة رصيد العهدة'}
+        onClose={() => { setActionModal(null); setEditingTx(null); setFormData({ amount: "", category: "supplies", purpose: "" }); }}
+        title={editingTx ? 'تعديل المعاملة' : (actionModal === 'spend' ? 'صرف من العهدة النقدية' : 'تعبئة رصيد العهدة')}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setActionModal(null)}>{t("cancel")}</Button>
+            <Button variant="secondary" onClick={() => { setActionModal(null); setEditingTx(null); setFormData({ amount: "", category: "supplies", purpose: "" }); }}>{t("cancel")}</Button>
             <Button 
               variant={actionModal === 'spend' ? 'danger' : 'success'} 
               onClick={handleAction}
             >
-              {actionModal === 'spend' ? 'تأكيد الصرف' : 'تأكيد التعبئة'}
+              {editingTx ? 'حفظ التعديل' : (actionModal === 'spend' ? 'تأكيد الصرف' : 'تأكيد التعبئة')}
             </Button>
           </>
         }
@@ -213,8 +208,8 @@ const PettyCash = () => {
           <div className="flex items-center gap-4 p-4 bg-primary/5 rounded-lg border border-primary/10 mb-4">
             <AlertCircle size={24} className="text-primary" />
             <div>
-              <p className="text-sm font-bold text-primary">الموظف: {selectedEmployee && (language === 'ar' ? selectedEmployee.nameAr : selectedEmployee.name)}</p>
-              <p className="text-xs text-primary/70">الرصيد الحالي: {selectedEmployee && (employeeBalances[selectedEmployee.id] || 0)} ج.م</p>
+              <p className="text-sm font-bold text-primary">رصيد العهدة الحالي</p>
+              <p className="text-lg font-black text-primary">{globalBalance.toLocaleString()} ج.م</p>
             </div>
           </div>
 
@@ -255,6 +250,12 @@ const PettyCash = () => {
           </div>
         </form>
       </Modal>
+      <ConfirmModal 
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => handleDelete(deleteConfirm)}
+        message={t("confirmDelete")}
+      />
     </PageWrapper>
   );
 };

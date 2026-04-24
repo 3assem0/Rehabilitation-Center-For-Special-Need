@@ -4,6 +4,7 @@ import DataTable from "../../components/ui/DataTable";
 import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
 import Modal from "../../components/ui/Modal";
+import ConfirmModal from "../../components/ui/ConfirmModal";
 import Input from "../../components/ui/Input";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
@@ -22,11 +23,12 @@ import {
   Calculator, 
   ChevronLeft, 
   ChevronRight, 
-  Printer, 
-  CheckCircle2, 
   DollarSign,
   Wallet,
-  Coins
+  Coins,
+  Settings,
+  Edit2,
+  Trash2
 } from "lucide-react";
 
 const PayrollSheet = () => {
@@ -34,7 +36,7 @@ const PayrollSheet = () => {
   const { currentUser } = useAuth();
   const { data: employees } = useFirestore("employees");
   const { data: attendance } = useFirestore("attendance");
-  const { data: payroll, addDocument: addPayroll, updateDocument: updatePayroll } = useFirestore("payroll");
+  const { data: payroll, addDocument: addPayroll, updateDocument: updatePayroll, deleteDocument: deletePayroll } = useFirestore("payroll");
   const { data: advances, addDocument: addAdvance } = useFirestore("advances");
   const { addDocument: addExpense } = useFirestore("expenses");
   
@@ -48,6 +50,11 @@ const PayrollSheet = () => {
   const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
   const [advanceData, setAdvanceData] = useState({ employeeId: "", amount: "", notes: "" });
 
+  const [adjustModal, setAdjustModal] = useState(null);
+  const [adjustData, setAdjustData] = useState({ deductions: 0, advances: 0 });
+
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // ID of record to delete
+
   // Filter attendance for current month
   const monthAttendance = useMemo(() => {
     const start = startOfMonth(currentMonth);
@@ -58,7 +65,28 @@ const PayrollSheet = () => {
     });
   }, [attendance, currentMonth]);
 
-  // Existing payroll records for this month
+  // Enhanced payroll records with arrears calculation
+  const tableData = useMemo(() => {
+    return payroll
+      .filter(p => p.month === monthKey && employees.some(e => e.id === p.employeeId))
+      .map(p => {
+        // Calculate sum of remaining amounts from all previous months
+        const previousArrears = payroll
+          .filter(prev => prev.employeeId === p.employeeId && prev.month < monthKey)
+          .reduce((sum, prev) => sum + (prev.remainingAmount || 0), 0);
+        
+        const totalDue = (p.netSalary || 0) + previousArrears;
+        const totalRemaining = Math.max(0, totalDue - (p.paidAmount || 0));
+        
+        return { 
+          ...p, 
+          previousArrears, 
+          totalDue,
+          displayRemaining: totalRemaining 
+        };
+      });
+  }, [payroll, monthKey, employees]);
+
   const existingPayroll = useMemo(() => {
     return payroll.filter(p => p.month === monthKey);
   }, [payroll, monthKey]);
@@ -116,19 +144,28 @@ const PayrollSheet = () => {
     e.preventDefault();
     if (!paymentModal) return;
 
-    const amount = Number(paymentAmount);
-    if (amount <= 0 || amount > paymentModal.remainingAmount) {
-      return toast.error("المبلغ غير صالح، يجب أن يكون أكبر من صفر ولا يتجاوز المبلغ المتبقي");
+    // Calculate total debt for this employee across all time (up to now)
+    const previousArrears = payroll
+      .filter(prev => prev.employeeId === paymentModal.employeeId && prev.month < monthKey)
+      .reduce((sum, prev) => sum + (prev.remainingAmount || 0), 0);
+    
+    const currentTotalDue = (paymentModal.netSalary || 0) + previousArrears;
+    const currentRemaining = currentTotalDue - (paymentModal.paidAmount || 0);
+    
+    if (amount <= 0 || amount > currentRemaining) {
+      return toast.error("المبلغ غير صالح، يجب أن يكون أكبر من صفر ولا يتجاوز إجمالي المستحق");
     }
 
     try {
       const newPaid = (paymentModal.paidAmount || 0) + amount;
-      const newRemaining = paymentModal.netSalary - newPaid;
-      const status = newRemaining <= 0 ? "paid" : "partial";
+      // Note: remainingAmount in the database record for THIS month is (netSalary - paidAmount).
+      // If paidAmount > netSalary, it will be negative, correctly offsetting previous arrears in the running total.
+      const newMonthRemaining = paymentModal.netSalary - newPaid;
+      const status = newMonthRemaining <= 0 ? "paid" : "partial";
 
       await updatePayroll(paymentModal.id, {
         paidAmount: newPaid,
-        remainingAmount: newRemaining,
+        remainingAmount: newMonthRemaining,
         paymentStatus: status,
         lastPaidDate: new Date()
       });
@@ -151,22 +188,32 @@ const PayrollSheet = () => {
     }
   };
 
-  const handleAdvanceSubmit = async (e) => {
-    e.preventDefault();
-    if (!advanceData.employeeId || !advanceData.amount) return toast.error("يرجى إكمال البيانات");
-
+  const handleAdjustSubmit = async () => {
     try {
-      await addAdvance({
-        employeeId: advanceData.employeeId,
-        amount: Number(advanceData.amount),
-        notes: advanceData.notes,
-        month: monthKey,
-        date: new Date(),
-        createdBy: currentUser.uid
+      const net = Math.max(0, (adjustModal.grossSalary || 0) + (adjustModal.overtimePay || 0) - adjustData.deductions - adjustData.advances);
+      const paid = adjustModal.paidAmount || 0;
+      const remaining = Math.max(0, net - paid);
+      const status = remaining <= 0 ? "paid" : (paid > 0 ? "partial" : "pending");
+
+      await updatePayroll(adjustModal.id, {
+        deductions: adjustData.deductions,
+        advances: adjustData.advances,
+        netSalary: net,
+        remainingAmount: remaining,
+        paymentStatus: status
       });
-      toast.success("تم تسجيل السلفة بنجاح. قم بتوليد المسير ليتم خصمها.");
-      setAdvanceModalOpen(false);
-      setAdvanceData({ employeeId: "", amount: "", notes: "" });
+      toast.success("تم تحديث البيانات بنجاح");
+      setAdjustModal(null);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleDeletePayroll = async (id) => {
+    try {
+      await deletePayroll(id);
+      toast.success(language === 'ar' ? "تم حذف السجل بنجاح" : "Record deleted successfully");
+      setDeleteConfirm(null);
     } catch (error) {
       toast.error(error.message);
     }
@@ -184,20 +231,43 @@ const PayrollSheet = () => {
         return <span className="font-bold">{emp ? (language === 'ar' ? emp.nameAr : emp.name) : '---'}</span>;
       }
     },
+    { 
+      header: "الراتب الأساسي", 
+      key: "monthlySalary", 
+      render: (val, row) => <span>{val ?? row.grossSalary ?? 0}</span> 
+    },
     { header: "الإضافي", key: "overtimePay", render: (val) => <span className="text-success">+{val}</span> },
     { 
-      header: "السلف والخصومات", 
+      header: "الخصومات والسلف", 
       key: "deductions", 
       render: (_, row) => (
-        <div className="flex flex-col">
-          <span className="text-danger font-bold">-{row.deductions}</span>
-          {row.advances > 0 && <span className="text-[10px] text-text-muted">سلف: {row.advances}</span>}
+        <div className="flex items-center gap-2">
+          <div className="flex flex-col">
+            <span className="text-danger font-bold">-{row.deductions || 0}</span>
+            {row.advances > 0 && <span className="text-[10px] text-text-muted">سلف: {row.advances}</span>}
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => {
+            setAdjustModal(row);
+            setAdjustData({ deductions: row.deductions || 0, advances: row.advances || 0 });
+          }} title="تعديل يدوي">
+            <Settings size={14} className="text-text-muted" />
+          </Button>
         </div>
       ) 
     },
     { 
       header: "الصافي", 
       key: "netSalary", 
+      render: (val) => <span className="font-bold text-primary">{val.toLocaleString()}</span> 
+    },
+    { 
+      header: "متأخرات سابقة", 
+      key: "previousArrears", 
+      render: (val) => <span className={val > 0 ? "text-danger font-bold" : "text-text-muted"}>{val > 0 ? `+${val.toLocaleString()}` : "0"}</span> 
+    },
+    { 
+      header: "إجمالي المستحق", 
+      key: "totalDue", 
       render: (val) => <span className="text-lg font-black text-primary">{val.toLocaleString()}</span> 
     },
     { 
@@ -207,27 +277,39 @@ const PayrollSheet = () => {
     },
     { 
       header: "المتبقي", 
-      key: "remainingAmount", 
-      render: (val) => <span className="text-danger font-bold">{val !== undefined ? val : '---'}</span> 
+      key: "displayRemaining", 
+      render: (val) => <span className="text-danger font-bold">{val !== undefined ? val.toLocaleString() : '---'}</span> 
     },
     { 
       header: "الحالة", 
       key: "paymentStatus",
-      render: (val, row) => (
-        <div className="flex items-center gap-2">
-          <Badge variant={statusVariants[val || (row.isPaid ? 'paid' : 'pending')]}>
-            {statusLabels[val || (row.isPaid ? 'paid' : 'pending')]}
-          </Badge>
-          {val !== 'paid' && !row.isPaid && (row.remainingAmount > 0 || row.remainingAmount === undefined) && (
-            <Button variant="ghost" size="sm" onClick={() => {
-              setPaymentModal(row);
-              setPaymentAmount(row.remainingAmount ?? row.netSalary);
-            }} title="صرف دفعة">
-              <Coins size={16} className="text-success" />
+      render: (val, row) => {
+        const currentRemaining = row.remainingAmount ?? row.netSalary;
+        return (
+          <div className="flex items-center gap-2">
+            <Badge variant={statusVariants[val || (row.isPaid ? 'paid' : 'pending')]}>
+              {statusLabels[val || (row.isPaid ? 'paid' : 'pending')]}
+            </Badge>
+            {val !== 'paid' && !row.isPaid && (currentRemaining > 0) && (
+              <Button variant="ghost" size="sm" onClick={() => {
+                setPaymentModal(row);
+                setPaymentAmount(currentRemaining);
+              }} title="صرف دفعة">
+                <Coins size={16} className="text-success" />
+              </Button>
+            )}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setDeleteConfirm(row.id)}
+              title="حذف السجل"
+              className="text-danger hover:bg-danger/10"
+            >
+              <Trash2 size={16} />
             </Button>
-          )}
-        </div>
-      )
+          </div>
+        );
+      }
     },
   ];
 
@@ -257,10 +339,6 @@ const PayrollSheet = () => {
         </div>
 
         <div className="flex gap-3">
-          <Button variant="secondary" className="gap-2 text-danger border-danger/20 hover:bg-danger/5" onClick={() => setAdvanceModalOpen(true)}>
-            <Wallet size={18} />
-            تسجيل سلفة
-          </Button>
           <Button onClick={handleGeneratePayroll} className="gap-2 shadow-lg shadow-primary/20">
             <Calculator size={18} />
             توليد المسير
@@ -268,10 +346,10 @@ const PayrollSheet = () => {
         </div>
       </div>
 
-      {existingPayroll.length > 0 ? (
+      {tableData.length > 0 ? (
         <DataTable 
           columns={columns} 
-          data={existingPayroll.filter(p => employees.some(e => e.id === p.employeeId))} 
+          data={tableData} 
           searchPlaceholder="بحث عن موظف..."
         />
       ) : (
@@ -303,16 +381,16 @@ const PayrollSheet = () => {
           <form onSubmit={handlePaymentSubmit} className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-3 bg-bg rounded-lg text-center">
-                <p className="text-xs text-text-muted mb-1">الصافي</p>
-                <p className="font-bold">{paymentModal.netSalary} ج.م</p>
+                <p className="text-xs text-text-muted mb-1">إجمالي المستحق</p>
+                <p className="font-bold">{(paymentModal.totalDue || paymentModal.netSalary).toLocaleString()} ج.م</p>
               </div>
               <div className="p-3 bg-success/10 rounded-lg text-center text-success">
                 <p className="text-xs mb-1">المدفوع مسبقاً</p>
                 <p className="font-bold">{paymentModal.paidAmount || 0} ج.م</p>
               </div>
               <div className="p-3 bg-danger/10 rounded-lg text-center text-danger">
-                <p className="text-xs mb-1">المتبقي</p>
-                <p className="font-bold">{paymentModal.remainingAmount} ج.م</p>
+                <p className="text-xs mb-1">المتبقي النهائي</p>
+                <p className="font-bold">{(paymentModal.displayRemaining ?? paymentModal.remainingAmount ?? paymentModal.netSalary).toLocaleString()} ج.م</p>
               </div>
             </div>
 
@@ -328,54 +406,43 @@ const PayrollSheet = () => {
         )}
       </Modal>
 
-      {/* Advance Modal */}
+      {/* Adjust Modal */}
       <Modal
-        isOpen={advanceModalOpen}
-        onClose={() => setAdvanceModalOpen(false)}
-        title={`تسجيل سلفة موظف (${format(currentMonth, 'MMMM yyyy', { locale })})`}
+        isOpen={!!adjustModal}
+        onClose={() => setAdjustModal(null)}
+        title="تعديل الخصومات والسلف"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setAdvanceModalOpen(false)}>إلغاء</Button>
-            <Button variant="danger" onClick={handleAdvanceSubmit}>حفظ السلفة</Button>
+            <Button variant="secondary" onClick={() => setAdjustModal(null)}>إلغاء</Button>
+            <Button onClick={handleAdjustSubmit}>حفظ التعديلات</Button>
           </>
         }
       >
-        <form onSubmit={handleAdvanceSubmit} className="space-y-6">
-          <div className="w-full">
-            <label className="block text-sm font-semibold mb-2">الموظف</label>
-            <select 
-              className="input"
-              value={advanceData.employeeId}
-              onChange={(e) => setAdvanceData({ ...advanceData, employeeId: e.target.value })}
-              required
-            >
-              <option value="">اختر الموظف...</option>
-              {employees.filter(e => e.isActive).map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {language === 'ar' ? emp.nameAr : emp.name}
-                </option>
-              ))}
-            </select>
+        {adjustModal && (
+          <div className="space-y-4">
+             <Input 
+               label="قيمة الخصومات (غياب/تأخير/أخرى)" 
+               type="number" 
+               value={adjustData.deductions} 
+               onChange={e => setAdjustData({...adjustData, deductions: Number(e.target.value)})} 
+             />
+             <Input 
+               label="قيمة السلف" 
+               type="number" 
+               value={adjustData.advances} 
+               onChange={e => setAdjustData({...adjustData, advances: Number(e.target.value)})} 
+             />
+             <p className="text-xs text-text-muted italic">سيتم تحديث صافي الراتب تلقائياً بعد الحفظ.</p>
           </div>
-
-          <Input 
-            label="مبلغ السلفة" 
-            type="number"
-            value={advanceData.amount}
-            onChange={(e) => setAdvanceData({ ...advanceData, amount: e.target.value })}
-            required
-          />
-
-          <div className="w-full">
-            <label className="block text-sm font-semibold mb-2">ملاحظات (اختياري)</label>
-            <textarea 
-              className="input"
-              value={advanceData.notes}
-              onChange={(e) => setAdvanceData({ ...advanceData, notes: e.target.value })}
-            ></textarea>
-          </div>
-        </form>
+        )}
       </Modal>
+
+      <ConfirmModal 
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => handleDeletePayroll(deleteConfirm)}
+        message={language === 'ar' ? "هل أنت متأكد من حذف هذا الراتب؟" : "Are you sure you want to delete this payroll?"}
+      />
 
     </PageWrapper>
   );

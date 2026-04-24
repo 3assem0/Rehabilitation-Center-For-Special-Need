@@ -67,7 +67,11 @@ const AttendanceLog = () => {
   // ── Monthly summary stats ────────────────────────────────────────
   const summary = useMemo(() => {
     let present = 0, absent = 0, late = 0, half = 0;
+    const activeEmployeeIds = new Set(employees.filter(e => e.isActive !== false).map(e => e.id));
+    
     attendance.forEach((r) => {
+      if (!activeEmployeeIds.has(r.employeeId)) return;
+      
       const d = r.date.toDate ? r.date.toDate() : new Date(r.date);
       if (
         d >= monthStart && d <= monthEnd
@@ -80,7 +84,7 @@ const AttendanceLog = () => {
       }
     });
     return { present, absent, late, half };
-  }, [attendance, currentMonth, selectedEmployeeForStats, monthStart, monthEnd]);
+  }, [attendance, currentMonth, selectedEmployeeForStats, monthStart, monthEnd, employees]);
 
   const handleCellClick = (employee, date) => {
     const dateStr = format(date, "yyyy-MM-dd");

@@ -4,8 +4,8 @@ import DataTable from "../../components/ui/DataTable";
 import Button from "../../components/ui/Button";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
-import { Printer, FileText, Download, PieChart, TrendingUp, Users, Wallet, Activity, CreditCard, Layers } from "lucide-react";
-import { format } from "date-fns";
+import { Printer, FileText, Download, PieChart, TrendingUp, Users, Wallet, Activity, CreditCard, Layers, ChevronLeft, ChevronRight } from "lucide-react";
+import { format, isSameMonth, isSameYear, addMonths, subMonths, addYears, subYears } from "date-fns";
 import { ar, enUS } from "date-fns/locale";
 
 const Reports = () => {
@@ -30,6 +30,98 @@ const Reports = () => {
   // Helper to format currency
   const fmt = (val) => `${(val || 0).toLocaleString()} ج.م`;
 
+  const [periodType, setPeriodType] = useState("month");
+  const [reportDate, setReportDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const stats = useMemo(() => {
+    const now = reportDate;
+
+    const isMatch = (d) => {
+      if (periodType === 'all') return true;
+      if (periodType === 'year') return isSameYear(d, now);
+      if (periodType === 'month') return isSameMonth(d, now);
+      
+      const timeD = d.getTime();
+      const currentNow = new Date();
+      
+      if (periodType === '3months') {
+        const start = subMonths(currentNow, 3).getTime();
+        return timeD >= start && timeD <= currentNow.getTime();
+      }
+      if (periodType === '6months') {
+        const start = subMonths(currentNow, 6).getTime();
+        return timeD >= start && timeD <= currentNow.getTime();
+      }
+      if (periodType === 'custom') {
+        const s = new Date(startDate).getTime();
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        return timeD >= s && timeD <= e.getTime();
+      }
+      return false;
+    };
+
+    const currentRevenues = revenues.filter(r => {
+      if (!r.date) return false;
+      const d = new Date(r.date.toDate ? r.date.toDate() : r.date);
+      if (isMatch(d)) return true;
+      if (r.isRecurring && d < now) return true;
+      return false;
+    });
+
+    const currentExpenses = expenses.filter(e => {
+      if (!e.date) return false;
+      return isMatch(new Date(e.date.toDate ? e.date.toDate() : e.date));
+    });
+
+    const currentPettySpends = pettyCash.filter(p => {
+      if (p.type !== 'spend') return false;
+      if (!p.date) return false;
+      return isMatch(new Date(p.date.toDate ? p.date.toDate() : p.date));
+    });
+
+    const totalRev = currentRevenues.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
+    const totalExp = currentExpenses.reduce((sum, e) => sum + (e.amount || 0), 0) + currentPettySpends.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const currentPayroll = payroll.filter(p => {
+      // Only include payroll for employees that currently exist
+      const empExists = employees.some(e => e.id === p.employeeId);
+      if (!empExists) return false;
+      if (periodType === 'all') return true;
+      
+      const currentMonthStr = format(now, 'yyyy-MM');
+      const currentYearStr = format(now, 'yyyy');
+      if (periodType === 'month' && p.month && p.month !== currentMonthStr) return false;
+      if (periodType === 'year' && p.month && !p.month.startsWith(currentYearStr)) return false;
+      if (['3months', '6months', 'custom'].includes(periodType)) {
+        if (!p.month) return false;
+        // Payroll month is YYYY-MM. We parse it to the first of the month
+        const pDate = new Date(`${p.month}-01`);
+        return isMatch(pDate);
+      }
+      return true;
+    });
+
+    return { 
+      totalRev, 
+      totalExp, 
+      netProfit: totalRev - totalExp, 
+      currentRevenues, 
+      currentExpenses, 
+      currentPetty: currentPettySpends,
+      currentPettyAll: pettyCash.filter(p => {
+        if (!p.date) return false;
+        return isMatch(new Date(p.date.toDate ? p.date.toDate() : p.date));
+      }),
+      currentPayroll 
+    };
+  }, [revenues, expenses, pettyCash, payroll, employees, periodType, reportDate, startDate, endDate]);
+
   return (
     <PageWrapper title={t("reports")}>
       <div className="no-print">
@@ -42,21 +134,82 @@ const Reports = () => {
             </p>
           </div>
           
-          <Button 
-            onClick={() => {
-              setTimeout(() => {
-                try {
-                  window.print();
-                } catch (e) {
-                  alert(language === "ar" ? "الطباعة غير مدعومة في هذا المتصفح أو التطبيق." : "Printing not supported in this browser.");
-                }
-              }, 150);
-            }} 
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
-          >
-            <Printer size={15} strokeWidth={1.75} />
-            {language === "ar" ? "طباعة التقرير" : "Print Report"}
-          </Button>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <select 
+                className="input !py-2 !text-sm border-none" 
+                value={periodType} 
+                onChange={(e) => setPeriodType(e.target.value)}
+                style={{ borderRadius: "20px", outline: "none", fontWeight: 600, color: "#1a1a2e", background: "#ffffff", border: "0.5px solid #E8E8EC", minWidth: "120px" }}
+              >
+                <option value="month">{language === 'ar' ? 'شهر محدد' : 'Month'}</option>
+                <option value="3months">{language === 'ar' ? 'آخر 3 أشهر' : 'Last 3 Months'}</option>
+                <option value="6months">{language === 'ar' ? 'آخر 6 أشهر' : 'Last 6 Months'}</option>
+                <option value="year">{language === 'ar' ? 'سنة كاملة' : 'Year'}</option>
+                <option value="custom">{language === 'ar' ? 'فترة مخصصة' : 'Custom Range'}</option>
+                <option value="all">{language === 'ar' ? 'كل الوقت' : 'All Time'}</option>
+              </select>
+
+              {(periodType === 'month' || periodType === 'year') && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "4px",
+                  background: "#ffffff", borderRadius: "20px",
+                  border: "0.5px solid #E8E8EC", padding: "4px",
+                }}>
+                  <button
+                    onClick={() => setReportDate(periodType === 'year' ? subYears(reportDate, 1) : subMonths(reportDate, 1))}
+                    style={{ width: "32px", height: "32px", borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer", color: "#6B6B80", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    <ChevronRight size={16} strokeWidth={2} className={language === 'en' ? 'rotate-180' : ''} />
+                  </button>
+                  <span style={{ minWidth: "140px", textAlign: "center", fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>
+                    {periodType === 'year' ? format(reportDate, "yyyy") : format(reportDate, "MMMM yyyy", { locale })}
+                  </span>
+                  <button
+                    onClick={() => setReportDate(periodType === 'year' ? addYears(reportDate, 1) : addMonths(reportDate, 1))}
+                    style={{ width: "32px", height: "32px", borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer", color: "#6B6B80", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    <ChevronLeft size={16} strokeWidth={2} className={language === 'en' ? 'rotate-180' : ''} />
+                  </button>
+                </div>
+              )}
+
+              {periodType === 'custom' && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#ffffff", padding: "4px 12px", borderRadius: "20px", border: "0.5px solid #E8E8EC" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#6B6B80" }}>{language === 'ar' ? 'من' : 'From'}</span>
+                  <input 
+                    type="date" 
+                    value={startDate} 
+                    onChange={(e) => setStartDate(e.target.value)} 
+                    style={{ border: "none", outline: "none", fontSize: "13px", fontWeight: 500, color: "#1a1a2e", background: "transparent" }}
+                  />
+                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#6B6B80" }}>{language === 'ar' ? 'إلى' : 'To'}</span>
+                  <input 
+                    type="date" 
+                    value={endDate} 
+                    onChange={(e) => setEndDate(e.target.value)} 
+                    style={{ border: "none", outline: "none", fontSize: "13px", fontWeight: 500, color: "#1a1a2e", background: "transparent" }}
+                  />
+                </div>
+              )}
+            </div>
+
+            <Button 
+              onClick={() => {
+                setTimeout(() => {
+                  try {
+                    window.print();
+                  } catch (e) {
+                    alert(language === "ar" ? "الطباعة غير مدعومة في هذا المتصفح أو التطبيق." : "Printing not supported in this browser.");
+                  }
+                }, 150);
+              }} 
+              style={{ display: "flex", alignItems: "center", gap: "6px" }}
+            >
+              <Printer size={15} strokeWidth={1.75} />
+              {language === "ar" ? "طباعة التقرير" : "Print Report"}
+            </Button>
+          </div>
         </div>
 
         {/* ── Tabs Menu ── */}
@@ -156,7 +309,7 @@ const Reports = () => {
                   </p>
                 </div>
                 <p style={{ fontSize: "32px", fontWeight: 500, color: "#1a1a2e", lineHeight: 1 }}>
-                  {fmt(revenues.reduce((s, r) => s + r.totalAmount, 0))}
+                  {fmt(stats.totalRev)}
                 </p>
               </div>
 
@@ -170,7 +323,7 @@ const Reports = () => {
                   </p>
                 </div>
                 <p style={{ fontSize: "32px", fontWeight: 500, color: "#1a1a2e", lineHeight: 1 }}>
-                  {fmt(expenses.reduce((s, e) => s + e.amount, 0))}
+                  {fmt(stats.totalExp)}
                 </p>
               </div>
 
@@ -187,7 +340,7 @@ const Reports = () => {
                   </p>
                 </div>
                 <p style={{ fontSize: "32px", fontWeight: 500, color: "#1a1a2e", lineHeight: 1 }}>
-                  {fmt(revenues.reduce((s, r) => s + r.totalAmount, 0) - expenses.reduce((s, e) => s + e.amount, 0))}
+                  {fmt(stats.netProfit)}
                 </p>
               </div>
             </div>
@@ -211,10 +364,16 @@ const Reports = () => {
                   </thead>
                   <tbody>
                     <tr>
-                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{format(new Date(), "MMMM yyyy", { locale })}</td>
-                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 500, color: "#16A34A" }}>{fmt(revenues.reduce((s, r) => s + r.totalAmount, 0))}</td>
-                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 500, color: "#DC2626" }}>{fmt(expenses.reduce((s, e) => s + e.amount, 0))}</td>
-                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{fmt(revenues.reduce((s, r) => s + r.totalAmount, 0) - expenses.reduce((s, e) => s + e.amount, 0))}</td>
+                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>
+                        {periodType === 'all' ? (language === 'ar' ? 'كل الوقت' : 'All Time') : 
+                         periodType === '3months' ? (language === 'ar' ? 'آخر 3 أشهر' : 'Last 3 Months') :
+                         periodType === '6months' ? (language === 'ar' ? 'آخر 6 أشهر' : 'Last 6 Months') :
+                         periodType === 'custom' ? `${startDate} / ${endDate}` :
+                         periodType === 'year' ? format(reportDate, "yyyy") : format(reportDate, "MMMM yyyy", { locale })}
+                      </td>
+                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 500, color: "#16A34A" }}>{fmt(stats.totalRev)}</td>
+                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 500, color: "#DC2626" }}>{fmt(stats.totalExp)}</td>
+                      <td style={{ padding: "16px 24px", fontSize: "14px", fontWeight: 600, color: "#1a1a2e" }}>{fmt(stats.netProfit)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -239,20 +398,36 @@ const Reports = () => {
                 { header: language === "ar" ? "الراتب الأساسي" : "Gross", key: "grossSalary", render: fmt },
                 { header: language === "ar" ? "الخصومات" : "Deductions", key: "deductions", render: (v) => <span style={{ color: "#DC2626", fontWeight: 500 }}>-{fmt(v)}</span> },
                 { header: language === "ar" ? "صافي الراتب" : "Net", key: "netSalary", render: (v) => <span style={{ color: "#1a1a2e", fontWeight: 600 }}>{fmt(v)}</span> },
+                { header: language === "ar" ? "المدفوع" : "Paid", key: "paidAmount", render: fmt },
+                { header: language === "ar" ? "المتبقي" : "Remaining", key: "remainingAmount", render: fmt },
                 { 
                   header: language === "ar" ? "الحالة" : "Status", 
-                  key: "isPaid", 
-                  render: (v) => (
-                    <span style={{ 
-                      padding: "4px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600,
-                      background: v ? "#DCFCE7" : "#FEE2E2", color: v ? "#16A34A" : "#DC2626" 
-                    }}>
-                      {v ? (language === "ar" ? "تم الصرف" : "Paid") : (language === "ar" ? "غير مصروف" : "Unpaid")}
-                    </span>
-                  ) 
+                  key: "paymentStatus", 
+                  render: (v, row) => {
+                    const status = v || (row.isPaid ? 'paid' : 'pending');
+                    const colors = {
+                      paid: { bg: "#DCFCE7", color: "#16A34A" },
+                      partial: { bg: "#FEF9C3", color: "#CA8A04" },
+                      pending: { bg: "#FEE2E2", color: "#DC2626" }
+                    };
+                    const c = colors[status] || colors.pending;
+                    const labels = {
+                      paid: language === "ar" ? "تم الصرف" : "Paid",
+                      partial: language === "ar" ? "جزئي" : "Partial",
+                      pending: language === "ar" ? "غير مصروف" : "Unpaid"
+                    };
+                    return (
+                      <span style={{ 
+                        padding: "4px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600,
+                        background: c.bg, color: c.color 
+                      }}>
+                        {labels[status]}
+                      </span>
+                    );
+                  } 
                 }
               ]}
-              data={payroll}
+              data={stats.currentPayroll}
               searchPlaceholder={language === "ar" ? "بحث في الرواتب..." : "Search payroll..."}
             />
           </div>
@@ -288,7 +463,7 @@ const Reports = () => {
                   } 
                 }
               ]}
-              data={revenues}
+              data={stats.currentRevenues}
               searchPlaceholder={language === "ar" ? "بحث في العملاء..." : "Search clients..."}
             />
           </div>
@@ -301,11 +476,6 @@ const Reports = () => {
           <div style={{ animation: "fadeIn 0.3s ease" }}>
             <DataTable
               columns={[
-                { 
-                  header: language === "ar" ? "المسؤول" : "Employee", 
-                  key: "employeeId",
-                  render: (val) => employees.find(e => e.id === val)?.nameAr || employees.find(e => e.id === val)?.name || '---'
-                },
                 { 
                   header: language === "ar" ? "نوع الحركة" : "Type", 
                   key: "type", 
@@ -326,7 +496,7 @@ const Reports = () => {
                   render: (val) => val?.toDate ? format(val.toDate(), "dd/MM/yyyy") : "---" 
                 }
               ]}
-              data={pettyCash}
+              data={stats.currentPettyAll}
               searchPlaceholder={language === "ar" ? "بحث في المعاملات..." : "Search transactions..."}
             />
           </div>

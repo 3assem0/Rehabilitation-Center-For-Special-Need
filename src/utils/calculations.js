@@ -1,73 +1,107 @@
-import { differenceInMinutes, parseISO, format } from "date-fns";
+import { differenceInMinutes } from "date-fns";
 
 /**
  * Calculates work hours, overtime, and late minutes for a single attendance record.
- * @param {string} checkIn - HH:mm format
- * @param {string} checkOut - HH:mm format
- * @param {number} scheduledHours - Default hours (e.g. 8)
- * @returns {object} { actualHours, overtimeHours, lateMinutes }
  */
 export const calculateWorkHours = (checkIn, checkOut, scheduledHours = 8) => {
   if (!checkIn || !checkOut) return { actualHours: 0, overtimeHours: 0, lateMinutes: 0 };
 
   const start = new Date(`2000-01-01T${checkIn}`);
-  const end = new Date(`2000-01-01T${checkOut}`);
-  
-  // Total minutes worked
-  const totalMinutes = differenceInMinutes(end, start);
-  const actualHours = totalMinutes / 60;
-  
-  // Overtime: any hours beyond scheduled
+  const end   = new Date(`2000-01-01T${checkOut}`);
+
+  const totalMinutes  = differenceInMinutes(end, start);
+  const actualHours   = totalMinutes / 60;
   const overtimeHours = Math.max(0, actualHours - scheduledHours);
-  
-  // Late minutes: assume standard start is 8:00 AM if not provided, 
-  // but usually determined by checking against a 'shift start time' 
-  // For this center, we'll assume a 9:00 AM start for late calculation if not specified.
-  const shiftStart = new Date(`2000-01-01T09:00`);
+
+  const shiftStart  = new Date(`2000-01-01T09:00`);
   const lateMinutes = Math.max(0, differenceInMinutes(start, shiftStart));
 
   return {
-    actualHours: Number(actualHours.toFixed(2)),
+    actualHours:   Number(actualHours.toFixed(2)),
     overtimeHours: Number(overtimeHours.toFixed(2)),
-    lateMinutes: lateMinutes
+    lateMinutes,
   };
 };
 
 /**
- * Computes the payroll for an employee based on their attendance records and advances for a month.
+ * Computes the monthly payroll for an employee.
+ *
+ * Logic (monthly salary model):
+ *   • Base salary   = employee.monthlySalary   (falls back to hourlyRate × totalHours if not set)
+ *   • Daily rate    = monthlySalary / workingDays  (we use 26 as standard working days)
+ *   • Absent deduct = absentDays × dailyRate
+ *   • Late deduct   = (totalLateMinutes / (scheduledHours × 60)) × dailyRate
+ *   • Overtime pay  = overtimeHours × (dailyRate / scheduledHours) × overtimeMultiplier
+ *   • Advances      = sum of advances registered for this month
+ *   • Net salary    = base - absentDeduction - lateDeduction + overtimePay - advances
  */
 export const calculateEmployeePayroll = (employee, attendanceRecords, monthAdvances = []) => {
-  let totalWorkHours = 0;
+  const WORKING_DAYS     = 26;
+  const SCHEDULED_HOURS  = 8;
+
+  // ── Accumulate attendance stats ──────────────────────────────────
   let totalOvertimeHours = 0;
-  let totalDeductionMinutes = 0;
+  let totalLateMinutes   = 0;
+  let absentDays         = 0;
 
   attendanceRecords.forEach(record => {
-    if (record.status === "present" || record.status === "late") {
-      totalWorkHours += record.actualHours || 0;
+    if (record.status === "absent") {
+      absentDays++;
+    } else if (record.status === "present" || record.status === "late") {
       totalOvertimeHours += record.overtimeHours || 0;
-      totalDeductionMinutes += record.lateMinutes || 0;
+      totalLateMinutes   += record.lateMinutes   || 0;
+    }
+    // half_day counts as 0.5 absent day
+    if (record.status === "half_day") {
+      absentDays += 0.5;
     }
   });
 
-  const totalAdvances = monthAdvances.reduce((sum, advance) => sum + (advance.amount || 0), 0);
+  // ── Monthly salary base (with hourly fallback) ───────────────────
+  const useMonthlySalary = Boolean(employee.monthlySalary && employee.monthlySalary > 0);
+  const monthlySalary    = useMonthlySalary ? Number(employee.monthlySalary) : 0;
 
-  const grossSalary = totalWorkHours * employee.hourlyRate;
-  const overtimePay = totalOvertimeHours * employee.hourlyRate * (employee.overtimeRate || 1.5);
-  const lateDeductions = (totalDeductionMinutes / 60) * employee.hourlyRate;
-  
-  const totalDeductions = lateDeductions + totalAdvances;
-  const netSalary = grossSalary + overtimePay - totalDeductions;
+  let grossSalary, overtimePay, absentDeduction, lateDeduction;
+
+  if (useMonthlySalary) {
+    const dailyRate  = monthlySalary / WORKING_DAYS;
+    const hourlyRate = dailyRate / SCHEDULED_HOURS;
+
+    absentDeduction = 0;
+    lateDeduction   = 0;
+    overtimePay     = totalOvertimeHours * hourlyRate * (employee.overtimeRate || 1.5);
+    grossSalary     = monthlySalary;
+  } else {
+    // Legacy hourly fallback
+    const hourlyRate = Number(employee.hourlyRate) || 0;
+    let totalWorkHours = 0;
+    attendanceRecords.forEach(r => {
+      if (r.status === "present" || r.status === "late") {
+        totalWorkHours += r.actualHours || 0;
+      }
+    });
+    absentDeduction = 0;
+    lateDeduction   = 0;
+    overtimePay     = totalOvertimeHours * hourlyRate * (employee.overtimeRate || 1.5);
+    grossSalary     = totalWorkHours * hourlyRate;
+  }
+
+  const totalAdvances   = monthAdvances.reduce((s, a) => s + (a.amount || 0), 0);
+  const totalDeductions = totalAdvances; // Removed auto absent/late deductions
+  const netSalary       = Math.max(0, grossSalary + overtimePay - totalDeductions);
 
   return {
-    employeeId: employee.id,
-    totalWorkHours: Number(totalWorkHours.toFixed(2)),
-    overtimeHours: Number(totalOvertimeHours.toFixed(2)),
-    deductionMinutes: totalDeductionMinutes,
-    grossSalary: Math.round(grossSalary),
-    overtimePay: Math.round(overtimePay),
-    advances: Math.round(totalAdvances),
-    lateDeductions: Math.round(lateDeductions),
-    deductions: Math.round(totalDeductions),
-    netSalary: Math.round(netSalary)
+    employeeId:       employee.id,
+    monthlySalary:    Math.round(grossSalary),
+    overtimeHours:    Number(totalOvertimeHours.toFixed(2)),
+    absentDays:       Number(absentDays.toFixed(1)),
+    deductionMinutes: totalLateMinutes,
+    grossSalary:      Math.round(grossSalary),
+    overtimePay:      Math.round(overtimePay),
+    absentDeduction:  Math.round(absentDeduction),
+    lateDeductions:   Math.round(lateDeduction),
+    advances:         Math.round(totalAdvances),
+    deductions:       Math.round(totalDeductions),
+    netSalary:        Math.round(netSalary),
   };
 };

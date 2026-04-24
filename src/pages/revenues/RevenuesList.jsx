@@ -1,34 +1,81 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import PageWrapper from "../../components/layout/PageWrapper";
 import DataTable from "../../components/ui/DataTable";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import ConfirmModal from "../../components/ui/ConfirmModal";
 import Input from "../../components/ui/Input";
 import Badge from "../../components/ui/Badge";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
 import { useAuth } from "../../context/AuthContext";
 import { toast, Toaster } from "react-hot-toast";
-import { Plus, Filter, Download, Edit2 } from "lucide-react";
+import { Plus, Filter, Download, Edit2, Repeat, ArrowDownUp, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 const RevenuesList = () => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { currentUser } = useAuth();
-  const { data: revenues, loading, addDocument, updateDocument } = useFirestore("revenues");
+  const { data: revenues, loading, addDocument, updateDocument, deleteDocument } = useFirestore("revenues");
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [selectedRevenue, setSelectedRevenue] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const initialFormState = {
     clientName: "",
     type: "monthly_fee",
     totalAmount: "",
     paymentMethod: "cash",
     date: new Date().toISOString().split('T')[0],
-    notes: ""
+    notes: "",
+    isRecurring: false
   };
   const [formData, setFormData] = useState(initialFormState);
+
+  // Filters & Sort State
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterType, setFilterType] = useState("all");
+  const [sortKey, setSortKey] = useState("date-desc");
+
+  const filteredAndSortedRevenues = useMemo(() => {
+    let result = [...revenues];
+
+    // Filter
+    if (filterStatus !== "all") {
+      result = result.filter(r => r.paymentStatus === filterStatus);
+    }
+    if (filterType !== "all") {
+      result = result.filter(r => r.type === filterType);
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      if (sortKey === "date-desc") {
+        const da = a.date?.toDate ? a.date.toDate() : new Date(a.date || 0);
+        const db = b.date?.toDate ? b.date.toDate() : new Date(b.date || 0);
+        return db - da;
+      }
+      if (sortKey === "date-asc") {
+        const da = a.date?.toDate ? a.date.toDate() : new Date(a.date || 0);
+        const db = b.date?.toDate ? b.date.toDate() : new Date(b.date || 0);
+        return da - db;
+      }
+      if (sortKey === "amount-desc") {
+        return (b.totalAmount || 0) - (a.totalAmount || 0);
+      }
+      if (sortKey === "amount-asc") {
+        return (a.totalAmount || 0) - (b.totalAmount || 0);
+      }
+      if (sortKey === "name-asc") {
+        return (a.clientName || "").localeCompare(b.clientName || "", language);
+      }
+      return 0;
+    });
+
+    return result;
+  }, [revenues, filterStatus, filterType, sortKey, language]);
+
 
   const handleEditClick = (revenue, e) => {
     e.stopPropagation();
@@ -38,10 +85,21 @@ const RevenuesList = () => {
       totalAmount: revenue.totalAmount || "",
       paymentMethod: revenue.paymentMethod || "cash",
       date: revenue.date ? (revenue.date.toDate ? format(revenue.date.toDate(), 'yyyy-MM-dd') : revenue.date) : new Date().toISOString().split('T')[0],
-      notes: revenue.notes || ""
+      notes: revenue.notes || "",
+      isRecurring: revenue.isRecurring || false
     });
     setEditingId(revenue.id);
     setIsModalOpen(true);
+  };
+
+  const toggleRecurring = async (e, row) => {
+    e.stopPropagation();
+    try {
+      await updateDocument(row.id, { isRecurring: !row.isRecurring });
+      toast.success(!row.isRecurring ? "تم تفعيل التكرار الشهري لهذا العميل" : "تم إيقاف التكرار");
+    } catch (error) {
+      toast.error(error.message);
+    }
   };
 
   const formatDate = (val) => {
@@ -79,29 +137,53 @@ const RevenuesList = () => {
     },
     { header: t("date"), key: "date", render: formatDate },
     { 
-      header: "ملاحظات", 
-      key: "notes",
-      render: (val) => val ? (
-        <span className="text-sm text-text-muted italic max-w-[140px] truncate block">{val}</span>
-      ) : <span className="text-text-muted opacity-40">—</span>
+      header: "متكرر", 
+      key: "isRecurring",
+      render: (val, row) => (
+        <button 
+          onClick={(e) => toggleRecurring(e, row)}
+          className={`p-1.5 rounded-lg transition-colors ${val ? 'bg-primary text-white shadow-md' : 'bg-bg text-text-muted hover:text-primary hover:bg-primary/10'}`}
+          title="حالة متكررة (يتم إضافتها تلقائياً كل شهر)"
+        >
+          <Repeat size={16} />
+        </button>
+      )
     },
     {
       header: "إجراءات",
       key: "actions",
       render: (_, row) => (
-        <button 
-          onClick={(e) => handleEditClick(row, e)}
-          className="p-2 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg"
-        >
-          <Edit2 size={16} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={(e) => handleEditClick(row, e)}
+            className="p-2 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg"
+          >
+            <Edit2 size={16} />
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); setDeleteConfirm(row.id); }}
+            className="p-2 text-danger hover:bg-danger/10 transition-colors rounded-lg"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
       )
     }
   ];
 
+  const handleDelete = async (id) => {
+    try {
+      await deleteDocument(id);
+      toast.success("تم الحذف بنجاح");
+      setDeleteConfirm(null);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const handleSubmit = async (e) => {
@@ -113,9 +195,6 @@ const RevenuesList = () => {
         await updateDocument(editingId, {
           ...formData,
           totalAmount: total,
-          // Do not overwrite paidAmount/remainingAmount/paymentStatus on edit if we don't want to break it,
-          // but if we are editing total, we might need to adjust remaining.
-          // For simplicity, just update fields.
         });
         toast.success("تم التعديل بنجاح", { position: "top-center" });
       } else {
@@ -139,7 +218,7 @@ const RevenuesList = () => {
   };
 
   const handleExport = () => {
-    if (revenues.length === 0) {
+    if (filteredAndSortedRevenues.length === 0) {
       toast.error("لا توجد بيانات للتصدير");
       return;
     }
@@ -151,8 +230,8 @@ const RevenuesList = () => {
     };
     const methodMap = { cash: "نقدي", bank_transfer: "تحويل بنكي", check: "شيك" };
 
-    const headers = ["اسم العميل", "نوع الإيراد", "المبلغ الإجمالي", "المبلغ المدفوع", "المبلغ المتبقي", "حالة الدفع", "طريقة الدفع", "التاريخ", "ملاحظات"];
-    const rows = revenues.map(r => [
+    const headers = ["اسم العميل", "نوع الإيراد", "المبلغ الإجمالي", "المبلغ المدفوع", "المبلغ المتبقي", "حالة الدفع", "طريقة الدفع", "التاريخ", "متكرر", "ملاحظات"];
+    const rows = filteredAndSortedRevenues.map(r => [
       r.clientName || "",
       typeMap[r.type] || r.type || "",
       r.totalAmount ?? "",
@@ -161,6 +240,7 @@ const RevenuesList = () => {
       statusMap[r.paymentStatus] || r.paymentStatus || "",
       methodMap[r.paymentMethod] || r.paymentMethod || "",
       r.date ? formatDate(r.date) : "",
+      r.isRecurring ? "نعم" : "لا",
       (r.notes || "").replace(/"/g, '""')
     ]);
 
@@ -168,7 +248,6 @@ const RevenuesList = () => {
       .map(row => row.map(cell => `"${cell}"`).join(","))
       .join("\n");
 
-    // UTF-8 BOM for correct Arabic display in Excel
     const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -183,7 +262,7 @@ const RevenuesList = () => {
     <PageWrapper title={t("revenues")}>
       <Toaster position="top-center" />
       
-      <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary">{t("revenues")}</h1>
           <p className="text-text-muted mt-1">متابعة الإيرادات وتدفقات السيولة</p>
@@ -200,9 +279,44 @@ const RevenuesList = () => {
         </div>
       </div>
 
+      {/* Filter and Sort Panel */}
+      <div className="card mb-6 !p-4 flex flex-wrap gap-4 items-end bg-bg/50 border border-border">
+        <div className="flex-1 min-w-[150px]">
+          <label className="block text-xs font-bold text-text-muted uppercase mb-1 flex items-center gap-1"><Filter size={12}/> تصفية بالحالة</label>
+          <select className="input !py-2 !text-sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="all">الكل</option>
+            <option value="paid">مدفوع</option>
+            <option value="partial">مدفوع جزئياً</option>
+            <option value="pending">قيد الانتظار</option>
+          </select>
+        </div>
+        <div className="flex-1 min-w-[150px]">
+          <label className="block text-xs font-bold text-text-muted uppercase mb-1 flex items-center gap-1"><Filter size={12}/> تصفية بالنوع</label>
+          <select className="input !py-2 !text-sm" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+            <option value="all">الكل</option>
+            <option value="monthly_fee">{t("monthly_fee")}</option>
+            <option value="assessment">{t("assessment")}</option>
+            <option value="therapy">{t("therapy")}</option>
+            <option value="life_skills">{t("life_skills")}</option>
+            <option value="activities">{t("activities")}</option>
+            <option value="other">{t("other")}</option>
+          </select>
+        </div>
+        <div className="flex-1 min-w-[180px]">
+          <label className="block text-xs font-bold text-text-muted uppercase mb-1 flex items-center gap-1"><ArrowDownUp size={12}/> ترتيب حسب</label>
+          <select className="input !py-2 !text-sm" value={sortKey} onChange={(e) => setSortKey(e.target.value)}>
+            <option value="date-desc">التاريخ (الأحدث أولاً)</option>
+            <option value="date-asc">التاريخ (الأقدم أولاً)</option>
+            <option value="amount-desc">المبلغ (الأعلى أولاً)</option>
+            <option value="amount-asc">المبلغ (الأقل أولاً)</option>
+            <option value="name-asc">اسم العميل (أ-ي)</option>
+          </select>
+        </div>
+      </div>
+
       <DataTable 
         columns={columns} 
-        data={revenues} 
+        data={filteredAndSortedRevenues} 
         searchPlaceholder={t("clientName")}
         onRowClick={(row) => setSelectedRevenue(row)}
       />
@@ -217,9 +331,14 @@ const RevenuesList = () => {
           <div className="space-y-5">
             {/* Status badge + date */}
             <div className="flex items-center justify-between">
-              <Badge variant={statusVariants[selectedRevenue.paymentStatus]} className="text-sm px-4 py-1.5">
-                {t(selectedRevenue.paymentStatus)}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={statusVariants[selectedRevenue.paymentStatus]} className="text-sm px-4 py-1.5">
+                  {t(selectedRevenue.paymentStatus)}
+                </Badge>
+                {selectedRevenue.isRecurring && (
+                  <Badge variant="blue" className="text-xs px-2 py-1.5 gap-1"><Repeat size={12}/> متكرر</Badge>
+                )}
+              </div>
               <span className="text-xs text-text-muted">{formatDate(selectedRevenue.date)}</span>
             </div>
 
@@ -257,7 +376,7 @@ const RevenuesList = () => {
               ))}
             </div>
 
-            {/* Notes — full, no truncation */}
+            {/* Notes */}
             <div className="rounded-xl border border-border bg-bg/30 p-4">
               <p className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">ملاحظات</p>
               {selectedRevenue.notes ? (
@@ -345,6 +464,20 @@ const RevenuesList = () => {
             />
           </div>
 
+          <div className="flex items-center gap-3 p-4 bg-bg rounded-xl border border-border">
+            <input
+              type="checkbox"
+              id="isRecurring"
+              name="isRecurring"
+              checked={formData.isRecurring}
+              onChange={handleInputChange}
+              className="w-5 h-5 accent-primary cursor-pointer"
+            />
+            <label htmlFor="isRecurring" className="text-sm font-semibold cursor-pointer select-none">
+              حالة متكررة (تُحسب تلقائياً في إيرادات الأشهر القادمة)
+            </label>
+          </div>
+
           <div className="w-full">
             <label className="block text-sm font-semibold mb-2 text-text">ملاحظات</label>
             <textarea 
@@ -356,6 +489,12 @@ const RevenuesList = () => {
           </div>
         </form>
       </Modal>
+      <ConfirmModal 
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => handleDelete(deleteConfirm)}
+        message="هل أنت متأكد من حذف هذا الإيراد؟"
+      />
     </PageWrapper>
   );
 };

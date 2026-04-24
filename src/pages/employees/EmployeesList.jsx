@@ -4,6 +4,7 @@ import PageWrapper from "../../components/layout/PageWrapper";
 import DataTable from "../../components/ui/DataTable";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import ConfirmModal from "../../components/ui/ConfirmModal";
 import Input from "../../components/ui/Input";
 import Badge from "../../components/ui/Badge";
 import { useFirestore } from "../../hooks/useFirestore";
@@ -15,9 +16,8 @@ const emptyForm = {
   name: "",
   nameAr: "",
   jobTitle: "",
-  hourlyRate: "",
+  monthlySalary: "",
   overtimeRate: "1.5",
-  pettyCashLimit: "",
   phone: "",
   email: "",
   startDate: new Date().toISOString().split('T')[0],
@@ -30,30 +30,28 @@ const EmployeesList = () => {
   const { data: employees, loading, addDocument, deleteDocument, updateDocument } = useFirestore("employees");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState(null); // null = add mode, object = edit mode
+  const [editingEmployee, setEditingEmployee] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // ── Open modal for ADD ──
   const handleOpenAdd = () => {
     setEditingEmployee(null);
     setFormData(emptyForm);
     setIsModalOpen(true);
   };
 
-  // ── Open modal for EDIT, pre-fill with employee data ──
   const handleOpenEdit = (employee) => {
     setEditingEmployee(employee);
     setFormData({
-      name:           employee.name || "",
-      nameAr:         employee.nameAr || "",
-      jobTitle:       employee.jobTitle || "",
-      hourlyRate:     String(employee.hourlyRate ?? ""),
-      overtimeRate:   String(employee.overtimeRate ?? "1.5"),
-      pettyCashLimit: String(employee.pettyCashLimit ?? ""),
-      phone:          employee.phone || "",
-      email:          employee.email || "",
-      startDate:      employee.startDate || new Date().toISOString().split('T')[0],
-      isActive:       employee.isActive ?? true,
+      name:          employee.name || "",
+      nameAr:        employee.nameAr || "",
+      jobTitle:      employee.jobTitle || "",
+      monthlySalary: String(employee.monthlySalary ?? employee.hourlyRate ?? ""),
+      overtimeRate:  String(employee.overtimeRate ?? "1.5"),
+      phone:         employee.phone || "",
+      email:         employee.email || "",
+      startDate:     employee.startDate || new Date().toISOString().split('T')[0],
+      isActive:      employee.isActive ?? true,
     });
     setIsModalOpen(true);
   };
@@ -66,10 +64,7 @@ const EmployeesList = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const handleSubmit = async (e) => {
@@ -77,21 +72,20 @@ const EmployeesList = () => {
     try {
       const payload = {
         ...formData,
-        hourlyRate:     Number(formData.hourlyRate),
-        overtimeRate:   Number(formData.overtimeRate),
-        pettyCashLimit: Number(formData.pettyCashLimit),
+        monthlySalary: Number(formData.monthlySalary),
+        overtimeRate:  Number(formData.overtimeRate),
+        // keep hourlyRate as 0 for backward compat with old records
+        hourlyRate: 0,
+        pettyCashLimit: 0,
       };
 
       if (editingEmployee) {
-        // EDIT — update existing document
         await updateDocument(editingEmployee.id, payload);
         toast.success(t("successfullyUpdated"), { position: "top-center" });
       } else {
-        // ADD — create new document
         await addDocument(payload);
         toast.success(t("successfullyAdded"), { position: "top-center" });
       }
-
       handleClose();
     } catch (error) {
       toast.error(error.message);
@@ -99,13 +93,12 @@ const EmployeesList = () => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm(t("confirmDelete"))) {
-      try {
-        await deleteDocument(id);
-        toast.success(t("successfullyDeleted"));
-      } catch (error) {
-        toast.error(error.message);
-      }
+    try {
+      await deleteDocument(id);
+      toast.success(t("successfullyDeleted"));
+      setDeleteConfirm(null);
+    } catch (error) {
+      toast.error(error.message);
     }
   };
 
@@ -122,9 +115,13 @@ const EmployeesList = () => {
     },
     { header: t("jobTitle"), key: "jobTitle" },
     {
-      header: t("hourlyRate"),
-      key: "hourlyRate",
-      render: (val) => <span className="font-mono font-bold text-success">{val} ج.م</span>
+      header: "الراتب الشهري",
+      key: "monthlySalary",
+      render: (val, row) => (
+        <span className="font-mono font-bold text-success">
+          {(val || row.hourlyRate || 0).toLocaleString()} ج.م
+        </span>
+      )
     },
     {
       header: t("status"),
@@ -144,20 +141,16 @@ const EmployeesList = () => {
             <Eye size={16} />
           </Button>
           <Button
-            variant="ghost"
-            size="sm"
-            title="تعديل"
+            variant="ghost" size="sm" title="تعديل"
             className="text-primary-light hover:text-primary"
             onClick={() => handleOpenEdit(row)}
           >
             <Edit2 size={16} />
           </Button>
           <Button
-            variant="ghost"
-            size="sm"
-            title="حذف"
+            variant="ghost" size="sm" title="حذف"
             className="text-danger"
-            onClick={() => handleDelete(row.id)}
+            onClick={() => setDeleteConfirm(row.id)}
           >
             <Trash2 size={16} />
           </Button>
@@ -205,75 +198,21 @@ const EmployeesList = () => {
         }
       >
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Input label="الاسم (بالعربية)" name="nameAr" value={formData.nameAr} onChange={handleInputChange} required />
+          <Input label="Name (English)"   name="name"   value={formData.name}   onChange={handleInputChange} required />
+          <Input label={t("jobTitle")}    name="jobTitle" value={formData.jobTitle} onChange={handleInputChange} required />
+          <Input label={t("phone")}       name="phone"  value={formData.phone}  onChange={handleInputChange} />
+          <Input label="البريد الإلكتروني" name="email" type="email" value={formData.email} onChange={handleInputChange} />
           <Input
-            label="الاسم (بالعربية)"
-            name="nameAr"
-            value={formData.nameAr}
-            onChange={handleInputChange}
-            required
-          />
-          <Input
-            label="Name (English)"
-            name="name"
-            value={formData.name}
-            onChange={handleInputChange}
-            required
-          />
-          <Input
-            label={t("jobTitle")}
-            name="jobTitle"
-            value={formData.jobTitle}
-            onChange={handleInputChange}
-            required
-          />
-          <Input
-            label={t("phone")}
-            name="phone"
-            value={formData.phone}
-            onChange={handleInputChange}
-          />
-          <Input
-            label="البريد الإلكتروني"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={handleInputChange}
-          />
-          <Input
-            label={t("hourlyRate")}
-            name="hourlyRate"
+            label="الراتب الشهري (ج.م)"
+            name="monthlySalary"
             type="number"
-            value={formData.hourlyRate}
+            value={formData.monthlySalary}
             onChange={handleInputChange}
             required
           />
-          <Input
-            label={t("overtimeRate")}
-            name="overtimeRate"
-            type="number"
-            step="0.1"
-            value={formData.overtimeRate}
-            onChange={handleInputChange}
-            required
-          />
-          <Input
-            label={t("pettyCashLimit")}
-            name="pettyCashLimit"
-            type="number"
-            value={formData.pettyCashLimit}
-            onChange={handleInputChange}
-            required
-          />
-          <Input
-            label={t("startDate")}
-            name="startDate"
-            type="date"
-            value={formData.startDate}
-            onChange={handleInputChange}
-            required
-          />
+          <Input label={t("startDate")} name="startDate" type="date" value={formData.startDate} onChange={handleInputChange} required />
 
-          {/* Active status toggle — only visible in edit mode */}
           {editingEmployee && (
             <div className="md:col-span-2 flex items-center gap-3 p-4 bg-bg rounded-xl border border-border">
               <input
@@ -291,6 +230,12 @@ const EmployeesList = () => {
           )}
         </form>
       </Modal>
+      <ConfirmModal 
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => handleDelete(deleteConfirm)}
+        message={t("confirmDelete")}
+      />
     </PageWrapper>
   );
 };

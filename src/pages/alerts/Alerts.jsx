@@ -1,18 +1,16 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import PageWrapper from "../../components/layout/PageWrapper";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
+import { toast, Toaster } from "react-hot-toast";
 import { 
-  AlertTriangle, 
   Clock, 
   DollarSign, 
-  Wallet, 
-  CheckCircle2, 
-  ChevronLeft 
+  CheckCircle2 
 } from "lucide-react";
-import { format, differenceInDays, isSameMonth } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 
 const Alerts = () => {
   const { t, language } = useTranslation();
@@ -20,7 +18,26 @@ const Alerts = () => {
   const { data: revenues } = useFirestore("revenues");
   const { data: employees } = useFirestore("employees");
   const { data: payroll } = useFirestore("payroll");
-  const { data: transactions } = useFirestore("petty_cash");
+
+  // Local state to keep track of dismissed alerts with timestamps
+  const [dismissedAlerts, setDismissedAlerts] = useState(() => {
+    try {
+      const stored = localStorage.getItem("dismissed_alerts");
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error(e);
+    }
+    return {};
+  });
+
+  const handleDismiss = (id) => {
+    setDismissedAlerts(prev => {
+      const next = { ...prev, [id]: Date.now() };
+      localStorage.setItem("dismissed_alerts", JSON.stringify(next));
+      return next;
+    });
+    toast.success("تم تأكيد المراجعة، سيتم تذكيرك لاحقاً إذا لم يتم الحل");
+  };
 
   // Generate dynamic alerts based on system state
   const alerts = useMemo(() => {
@@ -47,45 +64,38 @@ const Alerts = () => {
     // 2. Unpaid Salaries for current month
     const monthKey = format(now, 'yyyy-MM');
     employees.filter(e => e.isActive).forEach(emp => {
-      const isPaid = payroll.find(p => p.employeeId === emp.id && p.month === monthKey && p.isPaid);
+      const isPaid = payroll.find(p => p.employeeId === emp.id && p.month === monthKey && p.paymentStatus === 'paid');
       if (!isPaid) {
         list.push({
-          id: `sal-${emp.id}`,
+          id: `sal-${emp.id}-${monthKey}`,
           type: "payroll",
           severity: "medium",
           title: `راتب غير مدفوع: ${language === 'ar' ? emp.nameAr : emp.name}`,
-          description: `لم يتم تأكيد صرف راتب هذا الموظف لشهر ${format(now, 'MMMM yyyy')}`,
+          description: `لم يتم تأكيد صرف راتب هذا الموظف بالكامل لشهر ${format(now, 'MMMM yyyy')}`,
           icon: <Clock size={20} />
         });
       }
     });
 
-    // 3. Petty Cash Balance Warnings (< 20% limit)
-    employees.forEach(emp => {
-      const empTx = transactions.filter(tx => tx.employeeId === emp.id);
-      const balance = empTx.reduce((sum, tx) => tx.type === 'spend' ? sum - tx.amount : sum + tx.amount, 0);
-      const limit = emp.pettyCashLimit || 0;
-      
-      if (limit > 0 && balance < (limit * 0.2)) {
-        list.push({
-          id: `petty-${emp.id}`,
-          type: "petty",
-          severity: "low",
-          title: `رصيد عهدة منخفض: ${language === 'ar' ? emp.nameAr : emp.name}`,
-          description: `الرصيد المتبقي (${balance} ج.م) أقل من 20% من حد العهدة المسموح`,
-          icon: <Wallet size={20} />
-        });
-      }
-    });
-
-    return list.sort((a, b) => {
-      const priority = { high: 0, medium: 1, low: 2 };
-      return priority[a.severity] - priority[b.severity];
-    });
-  }, [revenues, employees, payroll, transactions, language]);
+    return list
+      .filter(alert => {
+        const dismissedAt = dismissedAlerts[alert.id];
+        if (dismissedAt) {
+          // Hide only if it was dismissed within the last 24 hours (86,400,000 ms)
+          const isExpired = Date.now() - dismissedAt > 86400000;
+          if (!isExpired) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const priority = { high: 0, medium: 1, low: 2 };
+        return priority[a.severity] - priority[b.severity];
+      });
+  }, [revenues, employees, payroll, language, dismissedAlerts]);
 
   return (
     <PageWrapper title={t("alerts")}>
+      <Toaster position="top-center" />
       <div className="mb-10">
         <h1 className="text-2xl font-bold text-primary">{t("alerts")}</h1>
         <p className="text-text-muted m-2">تنبيهات النظام الذكية للمتابعة المالية والإدارية</p>
@@ -101,7 +111,6 @@ const Alerts = () => {
                 ${alert.severity === 'high' ? 'border-r-danger' : alert.severity === 'medium' ? 'border-r-warning' : 'border-r-primary-light'}
               `}
             >
-              {/* Icon and Content Wrapper */}
               <div className="flex items-start gap-3 sm:gap-4 grow w-full">
                 <div className={`
                   w-10 h-10 rounded-xl flex items-center justify-center shrink-0
@@ -123,9 +132,13 @@ const Alerts = () => {
                 </div>
               </div>
 
-              {/* Action Button */}
               <div className="w-full sm:w-auto shrink-0 flex justify-end mt-2 sm:mt-0 pt-3 sm:pt-0 border-t border-border sm:border-0">
-                <Button variant="ghost" size="sm" className="w-full sm:w-auto text-text-muted hover:text-success justify-center gap-1">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="w-full sm:w-auto text-text-muted hover:text-success justify-center gap-1"
+                  onClick={() => handleDismiss(alert.id)}
+                >
                   <CheckCircle2 size={18} />
                   <span className="text-xs">{t("acknowledged")}</span>
                 </Button>

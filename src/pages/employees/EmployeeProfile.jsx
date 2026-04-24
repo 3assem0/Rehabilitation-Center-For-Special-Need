@@ -5,7 +5,7 @@ import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
 import { useFirestore } from "../../hooks/useFirestore";
 import { useTranslation } from "../../context/AppContext";
-import { ArrowRight, Phone, Mail, Calendar, Wallet, Clock, CheckCircle2, XCircle, AlertTriangle, MinusCircle } from "lucide-react";
+import { ArrowRight, Phone, Mail, Calendar, Clock, CheckCircle2, XCircle, AlertTriangle, MinusCircle } from "lucide-react";
 import { format, isSameMonth } from "date-fns";
 import { ar, enUS } from "date-fns/locale";
 
@@ -17,13 +17,12 @@ const EmployeeProfile = () => {
 
   const { data: employees, loading: empLoading } = useFirestore("employees");
   const { data: attendance, loading: attLoading } = useFirestore("attendance");
-  const { data: transactions } = useFirestore("petty_cash");
 
   const employee = employees.find(e => e.id === id);
 
   // ── Current-month work hours ──
   const monthStats = useMemo(() => {
-    if (!employee) return { totalHours: 0, presentDays: 0, absentDays: 0, lateDays: 0 };
+    if (!employee) return { totalHours: 0, presentDays: 0, absentDays: 0, lateDays: 0, halfDays: 0 };
     const now = new Date();
     const myRecords = attendance.filter(r => {
       if (r.employeeId !== id) return false;
@@ -37,13 +36,6 @@ const EmployeeProfile = () => {
     const halfDays     = myRecords.filter(r => r.status === "half_day").length;
     return { totalHours: Number(totalHours.toFixed(1)), presentDays, absentDays, lateDays, halfDays };
   }, [attendance, id, employee]);
-
-  // ── Petty cash balance ──
-  const pettyCashBalance = useMemo(() => {
-    return transactions
-      .filter(tx => tx.employeeId === id)
-      .reduce((sum, tx) => tx.type === "spend" ? sum - tx.amount : sum + tx.amount, 0);
-  }, [transactions, id]);
 
   // ── All attendance records for this employee (sorted newest first) ──
   const empAttendance = useMemo(() => {
@@ -114,19 +106,11 @@ const EmployeeProfile = () => {
           </div>
 
           <div className="card bg-primary text-white border-none">
-            <h4 className="font-bold mb-4 opacity-80">معلومات الراتب والعهدة</h4>
+            <h4 className="font-bold mb-4 opacity-80">معلومات الراتب</h4>
             <div className="space-y-3">
               <div className="flex justify-between items-center bg-white/10 p-3 rounded-lg">
-                <span className="text-sm">أجر الساعة</span>
-                <span className="font-bold">{employee.hourlyRate} ج.م</span>
-              </div>
-              <div className="flex justify-between items-center bg-white/10 p-3 rounded-lg">
-                <span className="text-sm">مضاعف الإضافي</span>
-                <span className="font-bold">{employee.overtimeRate}x</span>
-              </div>
-              <div className="flex justify-between items-center bg-white/10 p-3 rounded-lg">
-                <span className="text-sm">حد العهدة النقدية</span>
-                <span className="font-bold">{employee.pettyCashLimit} ج.م</span>
+                <span className="text-sm">الراتب الشهري</span>
+                <span className="font-bold">{(employee.monthlySalary || employee.hourlyRate || 0).toLocaleString()} ج.م</span>
               </div>
             </div>
           </div>
@@ -136,7 +120,7 @@ const EmployeeProfile = () => {
         <div className="lg:col-span-2 space-y-6">
 
           {/* KPI mini cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="card flex items-center gap-3 !p-4">
               <div className="w-10 h-10 bg-success/10 text-success rounded-lg flex items-center justify-center shrink-0">
                 <Clock size={20} />
@@ -162,15 +146,6 @@ const EmployeeProfile = () => {
               <div>
                 <p className="text-[10px] text-text-muted uppercase font-bold">أيام الغياب</p>
                 <p className="text-lg font-black">{monthStats.absentDays} <span className="text-xs font-normal">يوم</span></p>
-              </div>
-            </div>
-            <div className="card flex items-center gap-3 !p-4">
-              <div className="w-10 h-10 bg-accent/10 text-accent rounded-lg flex items-center justify-center shrink-0">
-                <Wallet size={20} />
-              </div>
-              <div>
-                <p className="text-[10px] text-text-muted uppercase font-bold">رصيد العهدة</p>
-                <p className="text-lg font-black">{pettyCashBalance.toLocaleString()} <span className="text-xs font-normal">ج.م</span></p>
               </div>
             </div>
           </div>
