@@ -3,18 +3,27 @@ import PageWrapper from "../../components/layout/PageWrapper";
 import Input from "../../components/ui/Input";
 import Button from "../../components/ui/Button";
 import { useApp, useTranslation } from "../../context/AppContext";
-import { 
-  ShieldCheck, 
-  HelpCircle, 
-  Building2,
-  ImagePlus,
-  X
-} from "lucide-react";
+import { ShieldCheck, HelpCircle, Building2, ImagePlus, X, Trash2 } from "lucide-react";
 import { toast, Toaster } from "react-hot-toast";
+import { useFirestore } from "../../hooks/useFirestore";
 
 const Settings = () => {
   const { t } = useTranslation();
   const { state, dispatch } = useApp();
+  const { data: advances, deleteDocument: deleteAdvance } = useFirestore("advances");
+
+  const handleClearAdvances = async () => {
+    if (window.confirm("هل أنت متأكد من حذف جميع بيانات السلف؟ لا يمكن التراجع عن هذه الخطوة.")) {
+      try {
+        for (const advance of advances) {
+          await deleteAdvance(advance.id);
+        }
+        toast.success("تم حذف جميع بيانات السلف بنجاح");
+      } catch (error) {
+        toast.error("حدث خطأ أثناء الحذف");
+      }
+    }
+  };
   
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
@@ -102,6 +111,18 @@ const Settings = () => {
         </div>
 
         <div className="space-y-6">
+          <div className="card">
+            <h3 className="font-bold text-danger flex items-center gap-2 mb-4">
+              <Trash2 size={20} />
+              إدارة البيانات
+            </h3>
+            <p className="text-xs text-text-muted mb-4">
+              استخدم هذا الخيار بحذر. سيتم حذف جميع بيانات السلف المسجلة في النظام (بما في ذلك السلف المعلقة للموظفين المحذوفين).
+            </p>
+            <Button variant="danger" className="w-full justify-center" onClick={handleClearAdvances}>
+              حذف جميع بيانات السلف
+            </Button>
+          </div>
           
           <div className="card flex items-center gap-4">
             <div className="w-12 h-12 bg-bg rounded-xl flex items-center justify-center text-primary font-black">?</div>

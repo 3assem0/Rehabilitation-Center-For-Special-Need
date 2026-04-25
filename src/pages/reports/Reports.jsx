@@ -7,10 +7,12 @@ import { useTranslation } from "../../context/AppContext";
 import { Printer, FileText, Download, PieChart, TrendingUp, Users, Wallet, Activity, CreditCard, Layers, ChevronLeft, ChevronRight } from "lucide-react";
 import { format, isSameMonth, isSameYear, addMonths, subMonths, addYears, subYears } from "date-fns";
 import { ar, enUS } from "date-fns/locale";
+import html2pdf from "html2pdf.js";
 
 const Reports = () => {
   const { t, language } = useTranslation();
   const [activeTab, setActiveTab] = useState("financial");
+  const [isPdfMode, setIsPdfMode] = useState(false);
 
   const { data: revenues } = useFirestore("revenues");
   const { data: expenses } = useFirestore("expenses");
@@ -196,17 +198,30 @@ const Reports = () => {
             </div>
 
             <Button 
+              type="button"
+              disabled={isPdfMode}
               onClick={() => {
-                try {
-                  window.print();
-                } catch (e) {
-                  alert(language === "ar" ? "الطباعة غير مدعومة في هذا المتصفح أو التطبيق." : "Printing not supported in this browser.");
-                }
+                setIsPdfMode(true);
+                // Give React time to re-render with PDF styles
+                setTimeout(() => {
+                  const element = document.getElementById('report-content');
+                  const opt = {
+                    margin:       10,
+                    filename:     `Report_${format(new Date(), "yyyyMMdd")}.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { scale: 2, useCORS: true },
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                  };
+                  
+                  html2pdf().set(opt).from(element).save().then(() => {
+                    setIsPdfMode(false);
+                  });
+                }, 300);
               }} 
               style={{ display: "flex", alignItems: "center", gap: "6px" }}
             >
-              <Printer size={15} strokeWidth={1.75} />
-              {language === "ar" ? "طباعة التقرير" : "Print Report"}
+              <Download size={15} strokeWidth={1.75} />
+              {isPdfMode ? (language === "ar" ? "جاري التصدير..." : "Exporting...") : (language === "ar" ? "تصدير PDF" : "Export PDF")}
             </Button>
           </div>
         </div>
@@ -243,9 +258,9 @@ const Reports = () => {
       </div>
 
       {/* ── Report Content Area ── */}
-      <div className="print-area relative min-h-screen flex flex-col">
-        {/* Print Header (Only visible when printing) */}
-        <div className="hidden print:block mb-10 border-b-2 border-[#1a1a2e] pb-6">
+      <div id="report-content" className="print-area relative min-h-screen flex flex-col" style={isPdfMode ? { padding: '20px', background: 'white', color: 'black' } : {}}>
+        {/* Print Header (Only visible when printing or exporting) */}
+        <div className={`${isPdfMode ? 'block' : 'hidden print:block'} mb-10 border-b-2 border-[#1a1a2e] pb-6`}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "24px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                <div style={{ width: "60px", height: "60px", background: "#1a1a2e", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -272,10 +287,10 @@ const Reports = () => {
           
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
             <div>
-              <p className="no-print" style={{ fontSize: "18px", fontWeight: 700, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <p className={`${isPdfMode ? 'hidden' : 'no-print'}`} style={{ fontSize: "18px", fontWeight: 700, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 {tabs.find(t => t.id === activeTab).label}
               </p>
-              <p className="hidden print:block" style={{ fontSize: "18px", fontWeight: 700, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <p className={`${isPdfMode ? 'block' : 'hidden print:block'}`} style={{ fontSize: "18px", fontWeight: 700, color: "#2563EB", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 {language === "ar" ? "التقرير المالي الشامل" : "Comprehensive Financial Report"}
               </p>
             </div>
@@ -291,8 +306,8 @@ const Reports = () => {
         </div>
 
         <div className="flex-grow space-y-12">
-        <div className={activeTab === "financial" ? "block" : "hidden print:block"}>
-          <div className="hidden print:flex mb-6 pb-2 border-b-2 border-[#E8E8EC]">
+        <div className={activeTab === "financial" || isPdfMode ? "block" : "hidden print:block"}>
+          <div className={`${isPdfMode ? 'flex' : 'hidden print:flex'} mb-6 pb-2 border-b-2 border-[#E8E8EC]`}>
             <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1a1a2e" }}>{language === "ar" ? "التقرير المالي العام" : "Financial Overview"}</h2>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "24px", animation: "fadeIn 0.3s ease" }}>
@@ -381,8 +396,8 @@ const Reports = () => {
           </div>
         </div>
 
-        <div className={activeTab === "payroll" ? "block" : "hidden print:block print:mt-12"}>
-          <div className="hidden print:flex mb-6 pb-2 border-b-2 border-[#E8E8EC]">
+        <div className={activeTab === "payroll" || isPdfMode ? (isPdfMode ? "block mt-12" : "block") : "hidden print:block print:mt-12"}>
+          <div className={`${isPdfMode ? 'flex' : 'hidden print:flex'} mb-6 pb-2 border-b-2 border-[#E8E8EC]`}>
             <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1a1a2e" }}>{language === "ar" ? "رواتب الموظفين" : "Payroll"}</h2>
           </div>
           <div style={{ animation: "fadeIn 0.3s ease" }}>
@@ -432,8 +447,8 @@ const Reports = () => {
           </div>
         </div>
 
-        <div className={activeTab === "revenues" ? "block" : "hidden print:block print:mt-12"}>
-          <div className="hidden print:flex mb-6 pb-2 border-b-2 border-[#E8E8EC]">
+        <div className={activeTab === "revenues" || isPdfMode ? (isPdfMode ? "block mt-12" : "block") : "hidden print:block print:mt-12"}>
+          <div className={`${isPdfMode ? 'flex' : 'hidden print:flex'} mb-6 pb-2 border-b-2 border-[#E8E8EC]`}>
             <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1a1a2e" }}>{language === "ar" ? "إيرادات المركز" : "Revenues"}</h2>
           </div>
           <div style={{ animation: "fadeIn 0.3s ease" }}>
@@ -468,8 +483,8 @@ const Reports = () => {
           </div>
         </div>
 
-        <div className={activeTab === "petty" ? "block" : "hidden print:block print:mt-12"}>
-          <div className="hidden print:flex mb-6 pb-2 border-b-2 border-[#E8E8EC]">
+        <div className={activeTab === "petty" || isPdfMode ? (isPdfMode ? "block mt-12" : "block") : "hidden print:block print:mt-12"}>
+          <div className={`${isPdfMode ? 'flex' : 'hidden print:flex'} mb-6 pb-2 border-b-2 border-[#E8E8EC]`}>
             <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#1a1a2e" }}>{language === "ar" ? "العهد والمصروفات" : "Petty Cash"}</h2>
           </div>
           <div style={{ animation: "fadeIn 0.3s ease" }}>
@@ -503,7 +518,7 @@ const Reports = () => {
         </div>
 
         {/* Print Footer */}
-        <div className="hidden print:block mt-16 pt-8 border-t-2 border-[#E8E8EC]">
+        <div className={`${isPdfMode ? 'block' : 'hidden print:block'} mt-16 pt-8 border-t-2 border-[#E8E8EC]`}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
               <p style={{ fontSize: "12px", fontWeight: 700, color: "#1a1a2e", marginBottom: "4px" }}>
