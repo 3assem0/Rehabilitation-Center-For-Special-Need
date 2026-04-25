@@ -89,6 +89,7 @@ const Dashboard = () => {
   const { addDocument: addEmployee } = useFirestore("employees");
   const { data: payments } = useFirestore("payments");
   const { data: pettyCash } = useFirestore("petty_cash");
+  const { data: advances } = useFirestore("advances");
 
   // ── Quick Add Modals State ───────────────────────────
   const [quickAddType, setQuickAddType] = useState(null); // 'employee' | 'revenue'
@@ -173,9 +174,19 @@ const Dashboard = () => {
 
     const currentPettySpends = pettyCash.filter(p => {
       if (p.type !== 'spend') return false;
+      if (p.isLinkedToExpense) return false; // Prevent double counting
       if (!p.date) return false;
       return isSameMonth(new Date(p.date.toDate ? p.date.toDate() : p.date), now);
     });
+
+    const pettyCashBalance = pettyCash.reduce((sum, tx) => {
+      return tx.type === 'spend' ? sum - (tx.amount || 0) : sum + (tx.amount || 0);
+    }, 0);
+
+    const currentMonthKey = format(now, 'yyyy-MM');
+    const totalAdvancesThisMonth = advances
+      .filter(a => a.month === currentMonthKey)
+      .reduce((sum, a) => sum + (a.amount || 0), 0);
 
     const totalRev = currentRevenues.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
     const totalExp = currentExpenses.reduce((sum, e) => sum + (e.amount || 0), 0) + currentPettySpends.reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -214,9 +225,11 @@ const Dashboard = () => {
       revUp,
       revTrendText,
       expUp,
-      expTrendText
+      expTrendText,
+      pettyCashBalance,
+      totalAdvancesThisMonth
     };
-  }, [revenues, expenses, pettyCash, language]);
+  }, [revenues, expenses, pettyCash, advances, language]);
 
   // ── Chart data: 6 months ───────────────────────
   const chartData = useMemo(() => {
@@ -343,7 +356,7 @@ const Dashboard = () => {
             )}
 
             {/* Advanced Analytics Pills */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-border">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-5 pt-5 border-t border-border">
               
               {/* Net Profit */}
               <div className="flex flex-col gap-1">
@@ -386,6 +399,28 @@ const Dashboard = () => {
                 </div>
                 <span style={{ fontSize: "16px", fontWeight: 600, color: "#CA8A04" }}>
                   {stats.pendingPayments.toLocaleString()} ج.م
+                </span>
+              </div>
+
+              {/* Petty Cash Balance */}
+              <div className="flex flex-col gap-1 mt-2 pt-2 sm:mt-0 sm:pt-0 sm:border-t-0 border-t border-border sm:border-r sm:pr-4">
+                <div className="flex items-center gap-1.5">
+                  <DollarSign size={14} strokeWidth={2} color="#9090A8" />
+                  <span style={T.hint}>{language === "ar" ? "رصيد العهدة" : "Petty Cash"}</span>
+                </div>
+                <span style={{ fontSize: "16px", fontWeight: 600, color: "#1a1a2e" }}>
+                  {stats.pettyCashBalance.toLocaleString()} ج.م
+                </span>
+              </div>
+
+              {/* Advances */}
+              <div className="flex flex-col gap-1 mt-2 pt-2 sm:mt-0 sm:pt-0 sm:border-t-0 border-t border-border sm:border-r sm:pr-4">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle size={14} strokeWidth={2} color="#9090A8" />
+                  <span style={T.hint}>{language === "ar" ? "إجمالي السلف" : "Total Advances"}</span>
+                </div>
+                <span style={{ fontSize: "16px", fontWeight: 600, color: "#E85C3A" }}>
+                  {stats.totalAdvancesThisMonth.toLocaleString()} ج.م
                 </span>
               </div>
 

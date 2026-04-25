@@ -82,6 +82,7 @@ const Reports = () => {
 
     const currentPettySpends = pettyCash.filter(p => {
       if (p.type !== 'spend') return false;
+      if (p.isLinkedToExpense) return false; // Prevent double counting
       if (!p.date) return false;
       return isMatch(new Date(p.date.toDate ? p.date.toDate() : p.date));
     });
@@ -196,13 +197,11 @@ const Reports = () => {
 
             <Button 
               onClick={() => {
-                setTimeout(() => {
-                  try {
-                    window.print();
-                  } catch (e) {
-                    alert(language === "ar" ? "الطباعة غير مدعومة في هذا المتصفح أو التطبيق." : "Printing not supported in this browser.");
-                  }
-                }, 150);
+                try {
+                  window.print();
+                } catch (e) {
+                  alert(language === "ar" ? "الطباعة غير مدعومة في هذا المتصفح أو التطبيق." : "Printing not supported in this browser.");
+                }
               }} 
               style={{ display: "flex", alignItems: "center", gap: "6px" }}
             >

@@ -144,6 +144,8 @@ const PayrollSheet = () => {
     e.preventDefault();
     if (!paymentModal) return;
 
+    const amount = Number(paymentAmount); // <-- Defined amount here
+
     // Calculate total debt for this employee across all time (up to now)
     const previousArrears = payroll
       .filter(prev => prev.employeeId === paymentModal.employeeId && prev.month < monthKey)
@@ -202,6 +204,20 @@ const PayrollSheet = () => {
         remainingAmount: remaining,
         paymentStatus: status
       });
+
+      // Add advance to expenses if it increased
+      const advanceDiff = adjustData.advances - (adjustModal.advances || 0);
+      if (advanceDiff > 0) {
+        const emp = employees.find(e => e.id === adjustModal.employeeId);
+        await addExpense({
+          category: "salaries",
+          amount: advanceDiff,
+          description: `سلفة موظف - ${emp ? (language === 'ar' ? emp.nameAr : emp.name) : ''}`,
+          date: new Date().toISOString().split('T')[0],
+          createdBy: currentUser.uid
+        });
+      }
+
       toast.success("تم تحديث البيانات بنجاح");
       setAdjustModal(null);
     } catch (error) {

@@ -42,7 +42,7 @@ const Modal = ({ isOpen, onClose, title, children, footer }) => {
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        maxHeight: "90vh",
+        maxHeight: "calc(100vh - 32px)",
       }}>
         {/* Header */}
         <div style={{
@@ -66,7 +66,7 @@ const Modal = ({ isOpen, onClose, title, children, footer }) => {
         </div>
 
         {/* Body */}
-        <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+        <div style={{ padding: "24px", overflowY: "auto", flex: 1, minHeight: 0 }}>
           {children}
         </div>
 

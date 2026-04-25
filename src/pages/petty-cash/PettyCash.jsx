@@ -25,6 +25,7 @@ const PettyCash = () => {
   const { currentUser } = useAuth();
   // Using global petty_cash collection without filtering by employee
   const { data: transactions, addDocument, updateDocument, deleteDocument } = useFirestore("petty_cash");
+  const { addDocument: addExpense } = useFirestore("expenses");
   
   const [actionModal, setActionModal] = useState(null); // 'topup' | 'spend'
   const [editingTx, setEditingTx] = useState(null);
@@ -68,8 +69,20 @@ const PettyCash = () => {
           purpose: formData.purpose,
           currentBalance: actionModal === 'spend' ? globalBalance - amount : globalBalance + amount,
           date: new Date(),
-          createdBy: currentUser.uid
+          createdBy: currentUser.uid,
+          isLinkedToExpense: actionModal === 'spend'
         });
+
+        if (actionModal === 'spend') {
+          await addExpense({
+            category: "petty_cash_expense",
+            amount: amount,
+            description: `من العهدة: ${formData.purpose}`,
+            date: new Date().toISOString().split('T')[0],
+            createdBy: currentUser.uid
+          });
+        }
+        
         toast.success(t("successfullyUpdated"));
       }
       setActionModal(null);
